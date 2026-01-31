@@ -21,13 +21,13 @@ parser.add_argument('--decoding_method', type=str, default='beam_search')
 parser.add_argument('--top_p', type=float, default=1.0)
 args = parser.parse_args()
 
-model = AutoModelForCausalLM.from_pretrained(f"facebook/{args.model}",
-                                             torch_dtype=torch.float16,
-                                             cache_dir=config.data_dir).cuda()
+# model = AutoModelForCausalLM.from_pretrained(f"facebook/{args.model}",
+#                                              torch_dtype=torch.float16,
+#                                              cache_dir=config.data_dir).cuda()
 tokenizer = AutoTokenizer.from_pretrained(f"facebook/opt-350m", use_fast=False, cache_dir=config.data_dir)
 
-if args.model == 'opt-30b':
-    accelerate.dispatch_model(model, device_map=config.device_map)
+# if args.model == 'opt-30b':
+#     accelerate.dispatch_model(model, device_map=config.device_map)
 
 seed_value = 10
 
