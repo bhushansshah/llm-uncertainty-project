@@ -28,7 +28,8 @@ dataset['rouge2'] = []
 dataset['rougeL'] = []
 dataset['semantic_variability'] = []
 dataset['id'] = []
-
+count = 0
+total_samples = len(data)
 for sample_id, sample in enumerate(data):
     story = sample['story']
     questions = sample['questions']
@@ -73,9 +74,14 @@ for sample_id, sample in enumerate(data):
                     inputs.append(input)
                     #print(encoded_input)
 
-        encoded_input = tokenizer.batch_encode_plus(inputs, padding=True)
-
-        prediction = model(torch.tensor(encoded_input['input_ids'], device='cuda'))['logits']
+        encoded_input = tokenizer(
+            inputs,
+            padding=True,
+            truncation=True,
+            return_tensors="pt",
+        )
+        encoded_input = {k: v.to("cuda") for k, v in encoded_input.items()}
+        prediction = model(**encoded_input)['logits']
 
         predicted_label = torch.argmax(prediction, dim=1)
         if 0 in predicted_label:
@@ -84,10 +90,11 @@ for sample_id, sample in enumerate(data):
         dataset['semantic_variability'].append(has_semantically_different_answers)
 
         results = rouge.compute(predictions=answer_list_1, references=answer_list_2)
-        dataset['rouge1'].append(results['rouge1'].mid.fmeasure)
-        dataset['rouge2'].append(results['rouge2'].mid.fmeasure)
-        dataset['rougeL'].append(results['rougeL'].mid.fmeasure)
-
+        dataset['rouge1'].append(results['rouge1'])
+        dataset['rouge2'].append(results['rouge2'])
+        dataset['rougeL'].append(results['rougeL'])
+        count += 1
+        print(f"{count} done out of {total_samples}")
 dataset_df = pd.DataFrame.from_dict(dataset)
 
 dataset = Dataset.from_pandas(dataset_df)

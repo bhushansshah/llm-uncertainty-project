@@ -24,7 +24,8 @@ args = parser.parse_args()
 # model = AutoModelForCausalLM.from_pretrained(f"facebook/{args.model}",
 #                                              torch_dtype=torch.float16,
 #                                              cache_dir=config.data_dir).cuda()
-tokenizer = AutoTokenizer.from_pretrained(f"facebook/opt-350m", use_fast=False, cache_dir=config.data_dir)
+print(f"Data dir - {config.data_dir}")
+tokenizer = AutoTokenizer.from_pretrained(f"facebook/opt-350m", use_fast=False)
 
 # if args.model == 'opt-30b':
 #     accelerate.dispatch_model(model, device_map=config.device_map)
@@ -34,8 +35,8 @@ seed_value = 10
 if not pathlib.Path(f'{config.data_dir}/trivia_qa').exists():
 
     print('Preprocessing dataset')
-    val_data = datasets.load_dataset("trivia_qa", "rc.nocontext", split="validation")
-    train_data = datasets.load_dataset("trivia_qa", "rc.nocontext", split="train")
+    val_data = datasets.load_dataset("mandarjoshi/trivia_qa", "rc.nocontext", split="validation")
+    train_data = datasets.load_dataset("mandarjoshi/trivia_qa", "rc.nocontext", split="train")
     data_for_few_shot_prompt = train_data.select(range(0, 10))
 
     few_shot_prompt = 'This is a bot that correctly answers questions. \n'

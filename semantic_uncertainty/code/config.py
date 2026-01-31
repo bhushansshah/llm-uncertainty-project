@@ -54,6 +54,6 @@ device_map = {
     'lm_head': 1
 }
 
-data_dir = '~/llm-uncertainty-project/semantic_uncertainty/data'
+data_dir = '/home/bhsshah/llm-uncertainty-project/semantic_uncertainty/data'
 hf_datasets_cache = '~/.cache/huggingface/'
 output_dir = '~/llm-uncertainty-project/semantic_uncertainty/outputs'

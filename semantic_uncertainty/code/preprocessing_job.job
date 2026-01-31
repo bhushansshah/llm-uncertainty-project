@@ -1,0 +1,22 @@
+#!/bin/bash
+#SBATCH --job-name=coqa_preprocessing
+#SBATCH --output=~/llm-uncertainty-project/semantic_uncertainty/logs/coqa_preprocessing_opt_350m_gpu_test_out.txt
+#SBATCH --error=~/llm-uncertainty-project/semantic_uncertainty/logs/coqa_preprocessing_opt_350m_gpu_test_err.txt
+#SBATCH --time=00-02:00
+#SBATCH --mem=32000
+#SBATCH --gres=gpu:1
+
+echo "===== Job started on $(hostname) ====="
+echo "Date: $(date)"
+
+# Ensure script runs from project code directory
+cd ~/llm-uncertainty-project/semantic_uncertainty/code
+
+# Activate your conda environment (update name if needed)
+source ~/miniconda3/etc/profile.d/conda.sh
+conda activate semantic_uncertainty
+echo "===== NVIDIA-SMI ====="
+nvidia-smi
+
+python3 parse_coqa.py
+echo "===== Job finished ====="
