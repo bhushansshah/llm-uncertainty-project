@@ -1,18 +1,13 @@
 import argparse
 import pathlib
-import pickle
-
-import accelerate
 import datasets
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoTokenizer
 
 import config
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--type_of_question', type=str)
-parser.add_argument('--num_generations_per_prompt', type=int, default=5)
-parser.add_argument('--fraction_of_data_to_use', type=float, default=0.9)
+parser.add_argument('--num_generations_per_prompt', type=int, default=16)
+parser.add_argument('--fraction_of_data_to_use', type=float, default=1)
 parser.add_argument('--model', type=str, default='opt-350m')
 parser.add_argument('--run_id', type=str, default='run_1')
 parser.add_argument('--temperature', type=float, default='1.0')
@@ -21,18 +16,12 @@ parser.add_argument('--decoding_method', type=str, default='beam_search')
 parser.add_argument('--top_p', type=float, default=1.0)
 args = parser.parse_args()
 
-# model = AutoModelForCausalLM.from_pretrained(f"facebook/{args.model}",
-#                                              torch_dtype=torch.float16,
-#                                              cache_dir=config.data_dir).cuda()
 print(f"Data dir - {config.data_dir}")
-tokenizer = AutoTokenizer.from_pretrained(f"facebook/opt-350m", use_fast=False)
-
-# if args.model == 'opt-30b':
-#     accelerate.dispatch_model(model, device_map=config.device_map)
+tokenizer = AutoTokenizer.from_pretrained(f"facebook/{args.model}", use_fast=False)
 
 seed_value = 10
 
-if not pathlib.Path(f'{config.data_dir}/trivia_qa').exists():
+if not pathlib.Path(f'{config.data_dir}/{args.model}/trivia_qa').exists():
 
     print('Preprocessing dataset')
     val_data = datasets.load_dataset("mandarjoshi/trivia_qa", "rc.nocontext", split="validation")
@@ -79,7 +68,8 @@ if not pathlib.Path(f'{config.data_dir}/trivia_qa').exists():
         columns=["input_ids", "attention_mask", "decoder_input_ids", "decoder_attention_mask", "labels"],
         output_all_columns=True)
 
-    val_data.save_to_disk(f'{config.data_dir}/trivia_qa')
+    val_data.save_to_disk(f'{config.data_dir}/{args.model}/trivia_qa')
 else:
 
-    val_data = datasets.load_from_disk(f'{config.data_dir}/trivia_qa')
+    val_data = datasets.load_from_disk(f'{config.data_dir}/{args.model}/trivia_qa')
+

@@ -29,5 +29,5 @@ print(run_id)
 run_id="run_1"
 echo "This is the run id $(run_id)"
 model='opt-1.3b'
-python3 generate.py --num_generations_per_prompt='5' --model=$model --fraction_of_data_to_use='0.03' --run_id=$run_id --temperature='0.5' --num_beams='1' --top_p='1.0' --project='nlg_uncertainty_opt_1.3b'
+python3 generate.py --num_generations_per_prompt='16' --model=$model --fraction_of_data_to_use='0.06' --run_id=$run_id --temperature='0.5' --num_beams='1' --top_p='1.0' --project='nlg_uncertainty_opt_1.3b'
 echo "===== Job finished ====="
