@@ -42,7 +42,7 @@ generation_tokenizer = AutoTokenizer.from_pretrained(f"facebook/opt-350m", use_f
 tokenizer = AutoTokenizer.from_pretrained("microsoft/deberta-large-mnli")
 model = AutoModelForSequenceClassification.from_pretrained("microsoft/deberta-large-mnli").cuda()
 
-wandb.init(project='nlg_uncertainty', id=args.run_id, config=args, resume='allow')
+wandb.init(project='nlg_uncertainty_opt_350m', id=args.run_id, config=args, resume='allow')
 
 run_name = wandb.run.name
 

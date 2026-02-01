@@ -55,5 +55,5 @@ device_map = {
 }
 
 data_dir = '/home/bhsshah/llm-uncertainty-project/semantic_uncertainty/data'
-hf_datasets_cache = '~/.cache/huggingface/'
-output_dir = '~/llm-uncertainty-project/semantic_uncertainty/outputs'
+hf_datasets_cache = '/home/bhsshah/.cache/huggingface/'
+output_dir = '/home/bhsshah/llm-uncertainty-project/semantic_uncertainty/outputs'

@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=nlg_uncertainty_opt_350m
-#SBATCH --output=~/llm-uncertainty-project/semantic_uncertainty/nlg_uncertainty_opt_350m_gpu_test_out.txt
-#SBATCH --error=~/llm-uncertainty-project/semantic_uncertainty/nlg_uncertainty_opt_350m_gpu_test_err.txt
+#SBATCH --output=/home/bhsshah/llm-uncertainty-project/semantic_uncertainty/nlg_uncertainty_opt_350m_gpu_test_out.txt
+#SBATCH --error=/home/bhsshah/llm-uncertainty-project/semantic_uncertainty/nlg_uncertainty_opt_350m_gpu_test_err.txt
 #SBATCH --time=00-02:00
 #SBATCH --mem=32000
 #SBATCH --gres=gpu:1
@@ -21,7 +21,7 @@ nvidia-smi
 run_id=`python3 -c "import wandb; from dotenv import load_dotenv; load_dotenv(); run_id = wandb.util.generate_id(); wandb.init(project='nlg_uncertainty_opt_350m', id=run_id); print(run_id)"`
 
 model='opt-350m'
-python3 generate.py --num_generations_per_prompt='16' --model=$model --fraction_of_data_to_use='0.02' --run_id=$run_id --temperature='0.5' --num_beams='1' --top_p='1.0'
+python3 generate.py --num_generations_per_prompt='16' --model=$model --fraction_of_data_to_use='0.002' --run_id=$run_id --temperature='0.5' --num_beams='1' --top_p='1.0'
 python3 clean_generated_strings.py  --generation_model=$model --run_id=$run_id
 python3 get_semantic_similarities.py --generation_model=$model --run_id=$run_id
 python3 get_likelihoods.py --evaluation_model=$model --generation_model=$model --run_id=$run_id

@@ -34,7 +34,7 @@ torch.manual_seed(seed_value)
 
 os.environ["HF_DATASETS_CACHE"] = config.hf_datasets_cache
 
-wandb.init(project='nlg_uncertainty', id=args.run_id, config=args, resume='allow')
+wandb.init(project='nlg_uncertainty_opt_350m', id=args.run_id, config=args, resume='allow')
 
 run_name = wandb.run.name
 

@@ -37,7 +37,7 @@ os.environ["HF_DATASETS_CACHE"] = config.hf_datasets_cache
 
 generation_tokenizer = AutoTokenizer.from_pretrained(f"facebook/opt-350m", use_fast=False, cache_dir=config.data_dir)
 
-wandb.init(project='nlg_uncertainty', id=args.run_id, config=args, resume='allow')
+wandb.init(project='nlg_uncertainty_opt_350m', id=args.run_id, config=args, resume='allow')
 
 run_name = wandb.run.name
 

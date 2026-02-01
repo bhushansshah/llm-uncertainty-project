@@ -25,7 +25,7 @@ sequence_embeddings_dict = {}
 run_ids_to_analyze = args.run_ids
 for run_id in run_ids_to_analyze:
 
-    wandb.init(project='nlg_uncertainty', id=run_id, resume='allow')
+    wandb.init(project='nlg_uncertainty_opt_350m', id=run_id, resume='allow')
     run_name = wandb.run.name
     model_name = wandb.config.model
     print(run_name)

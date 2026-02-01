@@ -13,6 +13,8 @@ import torch
 import tqdm
 import wandb
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from dotenv import load_dotenv
+load_dotenv()
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--type_of_question', type=str)
@@ -27,7 +29,7 @@ parser.add_argument('--top_p', type=float, default=1.0)
 parser.add_argument('--dataset', type=str, default='coqa')
 args = parser.parse_args()
 
-wandb.init(project='nlg_uncertainty', id=args.run_id, config=args, resume='allow')
+wandb.init(project='nlg_uncertainty_opt_350m', id=args.run_id, config=args, resume='allow')
 
 run_name = wandb.run.name
 
@@ -112,7 +114,7 @@ def get_generations(model, dataloader, number_of_generations):
                 1, -1) if args.dataset == 'trivia_qa' else batch['input_ids'].to(device)
             if args.decoding_method == 'beam_search':
                 most_likely_generation = model.generate(input_ids,
-                                                        num_beams=5,
+                                                        num_beams=args.num_beams,
                                                         num_return_sequences=2,
                                                         do_sample=False,
                                                         max_length=input_ids.shape[1] +
