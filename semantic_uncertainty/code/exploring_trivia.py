@@ -26,18 +26,18 @@ def _format_value(value):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--seed", type=int, default=10)
     parser.add_argument("--index", type=int, default=None)
+    parser.add_argument("--model", type=str, default='opt-350m')
     args = parser.parse_args()
 
-    data_path = f"{config.data_dir}/trivia_qa"
+    data_path = f"{config.data_dir}/{args.model}/trivia_qa"
     dataset = datasets.load_from_disk(data_path)
 
     if len(dataset) == 0:
         raise ValueError(f"No examples found at {data_path}")
 
     if args.index is None:
-        rng = random.Random(args.seed)
+        rng = random.Random()
         idx = rng.randrange(len(dataset))
     else:
         if args.index < 0 or args.index >= len(dataset):
@@ -61,13 +61,13 @@ def main():
     print(f"Example index: {idx} / {len(dataset) - 1}")
     print("Fields and values:")
     for key in sorted(sample.keys()):
-        print(_wrap(f"- {key}:", _format_value(sample.get(key))))
-    print(_wrap("Question:", sample.get("question", "N/A")))
-    print(_wrap("Answer:", sample.get("answer", "N/A")))
+        print(f"- {key}:", _format_value(sample.get(key)))
+    print("Question:", sample.get("question", "N/A"))
+    print("Answer:", sample.get("answer", "N/A"))
     if decoded_prompt is not None:
-        print(_wrap("Prompt (decoded input_ids):", decoded_prompt))
+        print("Prompt (decoded input_ids):", decoded_prompt)
     if decoded_answer is not None:
-        print(_wrap("Decoded decoder_input_ids:", decoded_answer))
+        print("Decoded decoder_input_ids:", decoded_answer)
 
 
 if __name__ == "__main__":

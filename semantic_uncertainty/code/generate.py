@@ -55,44 +55,44 @@ os.environ["HF_DATASETS_CACHE"] = config.hf_datasets_cache
 
 model = AutoModelForCausalLM.from_pretrained(f"facebook/{args.model}",
                                              torch_dtype=torch.float16,
-                                             cache_dir=config.hf_datasets_cache).cuda()
+                                             cache_dir=config.hf_datasets_cache).cuda() #Load model
 
 if args.model == 'opt-30b':
-    accelerate.dispatch_model(model, device_map=config.device_map)
+    accelerate.dispatch_model(model, device_map=config.device_map) #Dispatch model to GPU only if model is opt-30b
 
-tokenizer = AutoTokenizer.from_pretrained(f"facebook/{args.model}", use_fast=False, cache_dir=config.hf_datasets_cache)
+tokenizer = AutoTokenizer.from_pretrained(f"facebook/{args.model}", use_fast=False, cache_dir=config.hf_datasets_cache) #Load tokenizer
 
-opt_models = ['opt-125m', 'opt-350m', 'opt-1.3b', 'opt-2.7b', 'opt-6.7b', 'opt-13b', 'opt-30b']
+opt_models = ['opt-125m', 'opt-350m', 'opt-1.3b', 'opt-2.7b', 'opt-6.7b', 'opt-13b', 'opt-30b'] #List of opt models
 
 if args.dataset == 'coqa':
-    dataset = datasets.load_from_disk(f'{config.data_dir}/{args.model}/coqa_dataset')
-    id_to_question_mapping = dict(zip(dataset['id'], dataset['question']))
+    dataset = datasets.load_from_disk(f'{config.data_dir}/{args.model}/coqa_dataset') #Load dataset
+    id_to_question_mapping = dict(zip(dataset['id'], dataset['question'])) #Create mapping of id to question
 elif args.dataset == 'trivia_qa':
-    dataset = datasets.load_from_disk(f'{config.data_dir}/{args.model}/trivia_qa')
+    dataset = datasets.load_from_disk(f'{config.data_dir}/{args.model}/trivia_qa') #Load dataset
 
 if args.fraction_of_data_to_use < 1.0:
-    train_dataset = dataset.train_test_split(test_size=(1 - args.fraction_of_data_to_use), seed=seed_value)['train']
+    train_dataset = dataset.train_test_split(test_size=(1 - args.fraction_of_data_to_use), seed=seed_value)['train'] #Using fraction of data to use
 else:
-    train_dataset = dataset
+    train_dataset = dataset #Using all data
 
 
 def encode(examples):
-    return tokenizer(examples['story'] + ' Q: ' + examples['question'] + ' A:', truncation=False, padding=False)
+    return tokenizer(examples['story'] + ' Q: ' + examples['question'] + ' A:', truncation=False, padding=False) #Form the prompt and tokenize it.
 
 
 def encode_and_format_dataset(dataset):
-    dataset = dataset.map(encode, batched=False, load_from_cache_file=False)
-    dataset.set_format(type='torch', columns=['input_ids', 'attention_mask'], output_all_columns=True)
+    dataset = dataset.map(encode, batched=False, load_from_cache_file=False) #Encode and tokenize the dataset
+    dataset.set_format(type='torch', columns=['input_ids', 'attention_mask'], output_all_columns=True) # Set the format of the columns specificed to torch.
 
-    return dataset
+    return dataset #Return the dataset
 
 
 if args.dataset == 'coqa':
-    questions = encode_and_format_dataset(train_dataset)
+    questions = encode_and_format_dataset(train_dataset) #Encode and format the dataset
 elif args.dataset == 'trivia_qa':
-    questions = train_dataset
+    questions = train_dataset #Use all data
 
-dataloader = torch.utils.data.DataLoader(questions, batch_size=1)
+dataloader = torch.utils.data.DataLoader(questions, batch_size=1) #Create a dataloader
 
 period_token_id = tokenizer('. ')['input_ids'][1]
 eos_tokens = ['Question:', ' Question:', '\n', 'Answer:', ' Answer:', 'Q:']
@@ -234,3 +234,4 @@ pathlib.Path(f'{config.output_dir}/sequences/' + run_name).mkdir(parents=True, e
 
 with open(f'{config.output_dir}/sequences/{run_name}/{args.dataset}_{args.model}_generations.pkl', 'wb') as outfile:
     pickle.dump(sequences, outfile)
+
