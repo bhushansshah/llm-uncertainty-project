@@ -1,0 +1,33 @@
+#!/bin/bash
+#SBATCH --job-name=clean_string_opt_350m
+#SBATCH --output=/home/bhsshah/llm-uncertainty-project/semantic_uncertainty/logs/analyze_opt_350m_out.txt
+#SBATCH --error=/home/bhsshah/llm-uncertainty-project/semantic_uncertainty/logs/analyze_opt_350m_err.txt
+#SBATCH --time=02-00:00
+#SBATCH --mem=32000
+#SBATCH --gres=gpu:1
+
+echo "===== Job started on $(hostname) ====="
+echo "Date: $(date)"
+
+# Ensure script runs from project code directory
+cd ~/llm-uncertainty-project/semantic_uncertainty/code
+
+# Activate your conda environment (update name if needed)
+source ~/miniconda3/etc/profile.d/conda.sh
+conda activate semantic_uncertainty
+echo "===== NVIDIA-SMI ====="
+nvidia-smi
+
+python3 -c "
+import wandb
+from dotenv import load_dotenv
+load_dotenv()
+run_id = wandb.util.generate_id()
+wandb.init(project='nlg_uncertainty_opt_350m', id=run_id)
+print(run_id)
+"
+run_id="run_1"
+echo "This is the run id $(run_id)"
+model='opt-350m'
+python3 analyze_results.py --project=$model --dataset="trivia_qa" --model=$model
+echo "===== Job finished ====="
