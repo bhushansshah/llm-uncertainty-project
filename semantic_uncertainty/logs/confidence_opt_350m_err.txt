@@ -1,0 +1,19 @@
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from WANDB_API_KEY.
+wandb: Currently logged in as: bhushan-shah05 (bhushan-shah05-stony-brook-university) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: Tracking run with wandb version 0.24.1
+wandb: Run data is saved locally in /home/bhsshah/llm-uncertainty-project/semantic_uncertainty/code/wandb/run-20260204_022720-bgf0m6qw
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run faithful-salad-53
+wandb: ⭐️ View project at https://wandb.ai/bhushan-shah05-stony-brook-university/nlg_uncertainty_opt_350m
+wandb: 🚀 View run at https://wandb.ai/bhushan-shah05-stony-brook-university/nlg_uncertainty_opt_350m/runs/bgf0m6qw
+/var/lib/slurm/slurmd/job09321/slurm_script: line 30: run_id: command not found
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from WANDB_API_KEY.
+wandb: Currently logged in as: bhushan-shah05 (bhushan-shah05-stony-brook-university) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: Tracking run with wandb version 0.24.1
+wandb: Run data is saved locally in /home/bhsshah/llm-uncertainty-project/semantic_uncertainty/code/wandb/run-20260204_022725-run_1
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Resuming run run_1
+wandb: ⭐️ View project at https://wandb.ai/bhushan-shah05-stony-brook-university/opt-350m
+wandb: 🚀 View run at https://wandb.ai/bhushan-shah05-stony-brook-university/opt-350m/runs/run_1
+/home/bhsshah/llm-uncertainty-project/semantic_uncertainty/code/compute_confidence_measure.py:150: DeprecationWarning: __array_wrap__ must accept context and return_scalar arguments (positionally) in the future. (Deprecated NumPy 2.0)
+  margin_probabilities = np.exp(topk_likelihoods[:, 0]) - np.exp(topk_likelihoods[:, 1])

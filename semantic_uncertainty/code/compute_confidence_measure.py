@@ -7,15 +7,18 @@ import config
 import numpy as np
 import torch
 import wandb
-
+from dotenv import load_dotenv
+load_dotenv()
 parser = argparse.ArgumentParser()
-parser.add_argument('--generation_model', type=str, default='opt-350m')
-parser.add_argument('--evaluation_model', type=str, default='opt-350m')
-parser.add_argument('--run_id', type=str, default='run_1')
-parser.add_argument('--verbose', type=bool, default=True)
-args = parser.parse_args()
+parser.add_argument('--generation_model', type=str, default='opt-350m') #Generation model name
+parser.add_argument('--evaluation_model', type=str, default='opt-350m') #Evaluation model name
+parser.add_argument('--run_id', type=str, default='run_1') #Run id
+parser.add_argument('--verbose', type=bool, default=True) #Verbose flag
+parser.add_argument('--project', type=str, default='opt-350m') #Project name
+parser.add_argument('--dataset', type=str, default='trivia_qa') #Dataset name
+args = parser.parse_args() #Parse the arguments
 
-device = 'cuda'
+device = 'cuda' #Set the device to cuda
 
 # Set a seed value
 seed_value = 10
@@ -30,15 +33,15 @@ random.seed(seed_value)
 np.random.seed(seed_value)
 
 #Fix torch random seed
-torch.manual_seed(seed_value)
+torch.manual_seed(seed_value) #Set the torch random seed to the seed value
 
-os.environ["HF_DATASETS_CACHE"] = config.hf_datasets_cache
+os.environ["HF_DATASETS_CACHE"] = config.hf_datasets_cache #Set the HF_DATASETS_CACHE environment variable to the hf_datasets_cache
 
-wandb.init(project='nlg_uncertainty_opt_350m', id=args.run_id, config=args, resume='allow')
+wandb.init(project=args.project, id=args.run_id, config=args, resume='allow') #Initialize the wandb run
 
-run_name = wandb.run.name
+run_name = wandb.run.name #Get the run name
 
-llh_shift = torch.tensor(5.0)
+llh_shift = torch.tensor(5.0) #Set the llh shift to 5.0
 
 
 def get_overall_log_likelihoods(list_of_results):
@@ -54,19 +57,19 @@ def get_overall_log_likelihoods(list_of_results):
 
     list_of_keys = ['neg_log_likelihoods', 'average_neg_log_likelihoods', 'sequence_embeddings',\
                     'pointwise_mutual_information', 'average_neg_log_likelihood_of_most_likely_gen',\
-                    'neg_log_likelihood_of_most_likely_gen', 'semantic_set_ids']
+                    'neg_log_likelihood_of_most_likely_gen', 'semantic_set_ids'] #List of keys
 
-    for key in list_of_keys:
-        list_of_ids = []
-        overall_results = []
-        for model_size, result in list_of_results:
-            results_per_model = []
-            for sample in result:
-                average_neg_log_likelihoods = sample[key]
-                list_of_ids.append(sample['id'][0])
-                results_per_model.append(average_neg_log_likelihoods)
+    for key in list_of_keys: #Iterate over the list of keys
+        list_of_ids = [] #List of ids
+        overall_results = [] #List of overall results
+        for model_size, result in list_of_results: #Iterate over the list of results
+            results_per_model = [] #List of results per model
+            for sample in result: #Iterate over each sample
+                average_neg_log_likelihoods = sample[key] #Get the average negative log likelihood
+                list_of_ids.append(sample['id'][0]) #Append the id to the list of ids
+                results_per_model.append(average_neg_log_likelihoods) #Append the average negative log likelihood to the list of results per model
 
-            results_per_model = torch.stack(results_per_model)
+            results_per_model = torch.stack(results_per_model) 
 
             overall_results.append(results_per_model)
 
@@ -122,9 +125,10 @@ def get_predictive_entropy(log_likelihoods):
 
 def get_predictive_entropy_over_concepts(log_likelihoods, semantic_set_ids):
     """Compute the semantic entropy"""
-    mean_across_models = torch.logsumexp(log_likelihoods, dim=0) - torch.log(torch.tensor(log_likelihoods.shape[0]))
-    # This is ok because all the models have the same semantic set ids
-    semantic_set_ids = semantic_set_ids[0]
+    device = log_likelihoods.device
+    mean_across_models = torch.logsumexp(log_likelihoods, dim=0) - torch.log(torch.tensor(log_likelihoods.shape[0], device=device))
+    # This is ok because all the models have the same semantic set
+    semantic_set_ids = semantic_set_ids[0].to(device)
     entropies = []
     for row_index in range(mean_across_models.shape[0]):
         aggregated_likelihoods = []
@@ -132,11 +136,11 @@ def get_predictive_entropy_over_concepts(log_likelihoods, semantic_set_ids):
         semantic_set_ids_row = semantic_set_ids[row_index]
         for semantic_set_id in torch.unique(semantic_set_ids_row):
             aggregated_likelihoods.append(torch.logsumexp(row[semantic_set_ids_row == semantic_set_id], dim=0))
-        aggregated_likelihoods = torch.tensor(aggregated_likelihoods) - llh_shift
-        entropy = - torch.sum(aggregated_likelihoods, dim=0) / torch.tensor(aggregated_likelihoods.shape[0])
+        aggregated_likelihoods = torch.stack(aggregated_likelihoods) - llh_shift.to(device)
+        entropy = - torch.sum(aggregated_likelihoods, dim=0) / torch.tensor(aggregated_likelihoods.shape[0], device=device)
         entropies.append(entropy)
 
-    return torch.tensor(entropies)
+    return torch.stack(entropies)
 
 
 def get_margin_probability_uncertainty_measure(log_likelihoods):
@@ -148,12 +152,12 @@ def get_margin_probability_uncertainty_measure(log_likelihoods):
     return margin_probabilities
 
 
-list_of_results = []
+list_of_results = [] #List of results
 
-with open(f'{config.output_dir}/{run_name}/{args.generation_model}_generations_{args.evaluation_model}_likelihoods.pkl',
+with open(f'{config.output_dir}/likelihoods/{run_name}/{args.dataset}_{args.generation_model}_generations_{args.evaluation_model}_likelihoods.pkl',
           'rb') as infile:
-    sequences = pickle.load(infile)
-    list_of_results.append((args.evaluation_model, sequences))
+    sequences = pickle.load(infile) #Load the sequences
+    list_of_results.append((args.evaluation_model, sequences)) #Append the evaluation model and sequences to the list of results
 
 overall_results = get_overall_log_likelihoods(list_of_results)
 mutual_information = get_mutual_information(-overall_results['neg_log_likelihoods'])
@@ -209,7 +213,7 @@ for i in range(len(average_predictive_entropy_on_subsets)):
     overall_results[f'number_of_semantic_sets_on_subset_{i + 1}'] = number_of_semantic_sets_on_subsets[i]
 overall_results['average_pointwise_mutual_information'] = average_pointwise_mutual_information
 
-with open(f'{config.output_dir}/{run_name}/aggregated_likelihoods_{args.generation_model}_generations.pkl',
+with open(f'{config.output_dir}/confidence_measures/{run_name}/{args.dataset}_aggregated_likelihoods_{args.generation_model}_generations.pkl',
           'wb') as outfile:
     pickle.dump(overall_results, outfile)
 
@@ -225,3 +229,4 @@ if args.verbose:
     print(average_predictive_entropy_on_subsets[0].shape)
     print(overall_results['pointwise_mutual_information'])
     print(overall_results['margin_measures'])
+
