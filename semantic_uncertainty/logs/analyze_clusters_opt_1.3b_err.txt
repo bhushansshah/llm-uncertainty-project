@@ -1,0 +1,9 @@
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from WANDB_API_KEY.
+wandb: Currently logged in as: bhushan-shah05 (bhushan-shah05-stony-brook-university) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: Tracking run with wandb version 0.24.1
+wandb: Run data is saved locally in /home/bhsshah/llm-uncertainty-project/semantic_uncertainty/code/wandb/run-20260204_171100-s6lokic4
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run morning-snow-73
+wandb: ⭐️ View project at https://wandb.ai/bhushan-shah05-stony-brook-university/nlg_uncertainty_opt_350m
+wandb: 🚀 View run at https://wandb.ai/bhushan-shah05-stony-brook-university/nlg_uncertainty_opt_350m/runs/s6lokic4
+/var/lib/slurm/slurmd/job09363/slurm_script: line 30: run_id: command not found

@@ -1,0 +1,20 @@
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from WANDB_API_KEY.
+wandb: Currently logged in as: bhushan-shah05 (bhushan-shah05-stony-brook-university) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: Tracking run with wandb version 0.24.1
+wandb: Run data is saved locally in /home/bhsshah/llm-uncertainty-project/semantic_uncertainty/code/wandb/run-20260204_164312-qoxag9ec
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run flowing-dragon-68
+wandb: ⭐️ View project at https://wandb.ai/bhushan-shah05-stony-brook-university/nlg_uncertainty_opt_350m
+wandb: 🚀 View run at https://wandb.ai/bhushan-shah05-stony-brook-university/nlg_uncertainty_opt_350m/runs/qoxag9ec
+/var/lib/slurm/slurmd/job09358/slurm_script: line 30: run_id: command not found
+Traceback (most recent call last):
+  File "/home/bhsshah/llm-uncertainty-project/semantic_uncertainty/code/analyze_clusters.py", line 134, in <module>
+    false_negatives_df = get_false_negatives(result_df, best_threshold)
+  File "/home/bhsshah/llm-uncertainty-project/semantic_uncertainty/code/analyze_clusters.py", line 100, in get_false_negatives
+    false_negatives_df = df[df['correct'] == 1 and df['prediction_based_on_semantic_similarity'] == 0]
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/bhsshah/miniconda3/envs/semantic_uncertainty/lib/python3.13/site-packages/pandas/core/generic.py", line 1580, in __nonzero__
+    raise ValueError(
+    ...<2 lines>...
+    )
+ValueError: The truth value of a Series is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().
