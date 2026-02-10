@@ -1,4 +1,35 @@
+import os
+import json
+import glob
+
 import numpy as np
+from sklearn.metrics import roc_auc_score
+
+
+def load_results(outputs_dir, dataset, model):
+    """
+    Load all result JSON files for a given dataset and model.
+
+    Args:
+        outputs_dir (str): Path to the top-level outputs directory.
+        dataset (str): Dataset name (subfolder of outputs_dir).
+        model (str): Model name (subfolder of dataset folder).
+
+    Returns:
+        list[dict]: List of parsed result dictionaries, sorted by index.
+    """
+    model_dir = os.path.join(outputs_dir, dataset, model)
+    pattern = os.path.join(model_dir, "result_*.json")
+    files = sorted(glob.glob(pattern), key=lambda f: int(os.path.basename(f).split("_")[1].split(".")[0]))
+
+    decoder = json.JSONDecoder()
+    results = []
+    for fp in files:
+        with open(fp, "r") as f:
+            raw = f.read()
+        obj, _ = decoder.raw_decode(raw)
+        results.append(obj)
+    return results
 
 
 def normalize(logits):
@@ -45,3 +76,28 @@ def get_step_start_end_indices(response, step_number):
     
     step_start, step_end = step_markers[-2], step_markers[-1]
     return step_start, step_end
+
+def compute_auroc(scores, labels):
+    """
+    Compute AUROC using negative average log-probability as the
+    uncertainty score and correctness as the binary label.
+
+    Higher negative avg log-prob → more uncertain → more likely wrong.
+    AUROC measures how well this score separates correct from incorrect.
+
+    Args:
+        scores (list[float]): Negative average log-probabilities.
+        labels (list[int]): Correctness labels (0 or 1).
+
+    Returns:
+        float: AUROC score.
+    """
+    # AUROC: score predicts *incorrectness*, so we flip labels
+    # (1 = incorrect) or equivalently use 1 - labels as positive class.
+    # Convention: higher score → more likely incorrect.
+    scores = np.array(scores)
+    labels = np.array(labels)
+    # flip labels so that higher score → more likely incorrect
+    labels = 1 - labels
+    auroc = roc_auc_score(labels, scores)
+    return auroc
