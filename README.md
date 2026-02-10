@@ -51,3 +51,16 @@ python3 avg_logprobs_baselines.py \
 
 Results are saved to the specified CSV path with columns: `dataset`, `model`, `auroc`.
 
+### Average Token Entropy Baseline
+
+Computes the average token entropy per question using top-k log-probabilities as an uncertainty score and reports AUROC.
+
+```bash
+python3 avg_token_entropy_baselines.py \
+  --datasets gpqa mmlupro \
+  --models openai_gpt-oss-120b Qwen_Qwen3-32B \
+  --results_filepath results/avg_token_entropy_baselines.csv
+```
+
+Results are saved to the specified CSV path with columns: `dataset`, `model`, `auroc`.
+
