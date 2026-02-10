@@ -72,7 +72,7 @@ if args.generation_model == 'opt-30b':
 
 run_name = wandb.run.name #Get the run name
 
-with open(f'{config.output_dir}/sequences/{run_name}/{args.dataset}_{model_name}_generations_small.pkl', 'rb') as infile:
+with open(f'{config.output_dir}/sequences/{run_name}/{args.dataset}_{model_name}_generations.pkl', 'rb') as infile:
     sequences_for_few_shot_prompt = pickle.load(infile)
 
 wandb.finish() #Finish the wandb run

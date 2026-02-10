@@ -1,0 +1,38 @@
+#!/bin/bash
+#SBATCH --job-name=nlg_uncertainty_opt_350m
+#SBATCH --output=/home/bhsshah/llm-uncertainty-project/semantic_uncertainty/logs/combined_opt_350m_gpu_test_out.txt
+#SBATCH --error=/home/bhsshah/llm-uncertainty-project/semantic_uncertainty/logs/combined_opt_350m_gpu_test_err.txt
+#SBATCH --time=02-00:00
+#SBATCH --mem=32000
+#SBATCH --gres=gpu:1
+
+echo "===== Job started on $(hostname) ====="
+echo "Date: $(date)"
+
+# Ensure script runs from project code directory
+cd ~/llm-uncertainty-project/semantic_uncertainty/code
+
+# Activate your conda environment (update name if needed)
+source ~/miniconda3/etc/profile.d/conda.sh
+conda activate semantic_uncertainty
+echo "===== NVIDIA-SMI ====="
+nvidia-smi
+
+python3 -c "
+import wandb
+from dotenv import load_dotenv
+load_dotenv()
+run_id = wandb.util.generate_id()
+wandb.init(project='nlg_uncertainty_opt_350m', id=run_id)
+print(run_id)
+"
+run_id="run_1"
+echo "This is the run id $(run_id)"
+model='opt-350m'
+#python3 generate.py --num_generations_per_prompt='16' --model=$model --fraction_of_data_to_use='0.06' --run_id=$run_id --temperature='0.5' --num_beams='1' --top_p='1.0' --project='opt-350m'
+python3 clean_generated_strings.py --generation_model=$model --run_id=$run_id --project=$model
+python3 get_semantic_similarities.py --generation_model=$model --run_id=$run_id --project=$model --dataset="trivia_qa"
+python3 get_likelihoods.py --evaluation_model=$model --generation_model=$model --run_id=$run_id --project=$model --dataset="trivia_qa"
+python3 compute_confidence_measure.py --evaluation_model=$model --generation_model=$model --run_id=$run_id --project=$model --dataset="trivia_qa"
+echo "===== Job finished ====="
+

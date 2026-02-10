@@ -47,7 +47,7 @@ run_name = wandb.run.name
 
 tokenizer = AutoTokenizer.from_pretrained(f"facebook/{args.generation_model}", use_fast=False, cache_dir=config.data_dir) #Load the tokenizer
 
-with open(f'{config.output_dir}/sequences/{run_name}/{args.dataset}_{args.generation_model}_generations_small.pkl', 'rb') as infile: #Load the generations
+with open(f'{config.output_dir}/sequences/{run_name}/{args.dataset}_{args.generation_model}_generations.pkl', 'rb') as infile: #Load the generations
     sequences = pickle.load(infile)
 
 cleaned_sequences = [] #Initialize the cleaned sequences
@@ -79,6 +79,6 @@ for sample in tqdm(sequences):
     sample['cleaned_generations'] = cleaned_generations #Set the cleaned generations to the tensor
     cleaned_sequences.append(sample) #Append the cleaned sample to the list
 
-with open(f'{config.output_dir}/sequences/{run_name}/{args.dataset}_{args.generation_model}_generations_small.pkl', 'wb') as outfile: #Save the cleaned sequences
+with open(f'{config.output_dir}/sequences/{run_name}/{args.dataset}_{args.generation_model}_generations.pkl', 'wb') as outfile: #Save the cleaned sequences
     pickle.dump(cleaned_sequences, outfile) #Save the cleaned sequences
 print("The cleaned sequences are saved in the pickle file")

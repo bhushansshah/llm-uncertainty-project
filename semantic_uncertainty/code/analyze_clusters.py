@@ -47,7 +47,6 @@ def get_likelihoods_df():
 
     with open(f'{config.output_dir}/confidence_measures/{args.run_id}/{args.dataset}_aggregated_likelihoods_{args.model}_generations.pkl', 'rb') as f:
         likelihoods = pickle.load(f) #Load the likelihoods from the pickle file.
-        print(likelihoods.keys()) #Print the keys of the likelihoods dictionary.
 
         keys_to_use = ('ids', 'predictive_entropy', 'average_predictive_entropy',\
                         'predictive_entropy_over_concepts', 'number_of_semantic_sets', 'unnormalised_entropy_over_concepts')
@@ -139,7 +138,6 @@ def find_correct_cluster_id(df):
             rougeL_scores[cluster_id] = 0
 
         generation_texts = row["generated_texts"]
-        print(generation_texts)
         for cluster_id in cluster_ids:
             #get the generations_text for the cluster_id
             generations_text = generation_texts[row["semantic_set_ids"] == cluster_id]
@@ -223,6 +221,3 @@ avg_generations_correct_cluster = find_avg_generations_correct_cluster(correct_c
 avg_generations_incorrect_clusters = find_avg_generations_incorrect_clusters(correct_cluster_id_df)
 print(f'Average number of generations for the correct cluster: {avg_generations_correct_cluster}')
 print(f'Average number of generations for the incorrect clusters: {avg_generations_incorrect_clusters}')
-print(correct_cluster_id_df.head())
-
-

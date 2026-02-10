@@ -52,7 +52,7 @@ run_name = wandb.run.name #Get the run name
 
 opt_models = ['opt-125m', 'opt-350m', 'opt-1.3b', 'opt-2.7b', 'opt-6.7b', 'opt-13b', 'opt-30b'] #List of opt models
 
-with open(f'{config.output_dir}/sequences/{run_name}/{args.dataset}_{args.generation_model}_generations_small.pkl', 'rb') as infile:
+with open(f'{config.output_dir}/sequences/{run_name}/{args.dataset}_{args.generation_model}_generations.pkl', 'rb') as infile:
     sequences = pickle.load(infile)
 
 with open(f'{config.output_dir}/semantic_similarities/{run_name}/{args.dataset}_{args.generation_model}_generations_similarities.pkl', 'rb') as infile:

@@ -50,7 +50,7 @@ wandb.init(project=args.project, id=args.run_id, config=args, resume='allow') #I
 
 run_name = wandb.run.name #Get the run name
 
-with open(f'{config.output_dir}/sequences/{run_name}/{args.dataset}_{args.generation_model}_generations_small.pkl', 'rb') as infile: #Load the generations
+with open(f'{config.output_dir}/sequences/{run_name}/{args.dataset}_{args.generation_model}_generations.pkl', 'rb') as infile: #Load the generations
     sequences = pickle.load(infile)
 
 result_dict = {} #Initialize the result dictionary
