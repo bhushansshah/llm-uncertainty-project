@@ -1,3 +1,6 @@
 outputs/*
 __pycache__/
 *.pyc
+outputs
+.DS_Store
+.venv

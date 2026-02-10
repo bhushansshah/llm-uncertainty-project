@@ -1,0 +1,5 @@
+dataset,model,auroc
+gpqa,openai_gpt-oss-120b,0.5964
+gpqa,Qwen_Qwen3-32B,0.6835
+mmlupro,openai_gpt-oss-120b,0.5337
+mmlupro,Qwen_Qwen3-32B,0.635
