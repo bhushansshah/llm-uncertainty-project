@@ -90,3 +90,16 @@ python3 normalized_trace_length_baselines.py \
 
 Results are saved to the specified CSV path with columns: `dataset`, `model`, `auroc`.
 
+### Forking Tokens Baseline
+
+Identifies the top-50 "forking tokens" (tokens with the highest average entropy across the dataset, appearing in at least 20 examples) and counts how many forking tokens appear in each response as an uncertainty score. Reports AUROC.
+
+```bash
+python3 forking_tokens_baselines.py \
+  --datasets gpqa mmlupro scifact_without_evidence scifact_with_evidence\
+  --models openai_gpt-oss-120b Qwen_Qwen3-32B \
+  --results_filepath results/forking_tokens_baselines.csv
+```
+
+Results are saved to the specified CSV path with columns: `dataset`, `model`, `auroc`.
+
