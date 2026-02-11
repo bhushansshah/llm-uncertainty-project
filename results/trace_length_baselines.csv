@@ -1,0 +1,9 @@
+dataset,model,auroc
+gpqa,openai_gpt-oss-120b,0.656
+gpqa,Qwen_Qwen3-32B,0.8443
+mmlupro,openai_gpt-oss-120b,0.6958
+mmlupro,Qwen_Qwen3-32B,0.7492
+scifact_without_evidence,openai_gpt-oss-120b,0.6096
+scifact_without_evidence,Qwen_Qwen3-32B,0.6987
+scifact_with_evidence,openai_gpt-oss-120b,0.6728
+scifact_with_evidence,Qwen_Qwen3-32B,0.8413
