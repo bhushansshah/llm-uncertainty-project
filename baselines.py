@@ -57,3 +57,18 @@ def normalized_trace_length(tokens: list, mean_length: float, std_length: float)
         float: The normalized trace length
     """
     return (trace_length(tokens) - mean_length) / std_length
+    
+def num_forking_tokens(tokens: list, forking_tokens: set):
+    """
+    Compute the number of forking tokens.
+    Args:
+        tokens (list): A list of tokens
+        forking_tokens (set): A set of forking tokens
+    Returns:
+        int: The number of forking tokens
+    """
+    forking_tokens_count = 0
+    for token in tokens:
+        if token in forking_tokens:
+            forking_tokens_count += 1
+    return forking_tokens_count
