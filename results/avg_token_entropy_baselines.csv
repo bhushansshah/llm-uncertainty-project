@@ -3,3 +3,7 @@ gpqa,openai_gpt-oss-120b,0.596
 gpqa,Qwen_Qwen3-32B,0.6891
 mmlupro,openai_gpt-oss-120b,0.5301
 mmlupro,Qwen_Qwen3-32B,0.6233
+scifact_with_evidence,openai_gpt-oss-120b,0.6622
+scifact_with_evidence,Qwen_Qwen3-32B,0.7146
+scifact_without_evidence,openai_gpt-oss-120b,0.6921
+scifact_without_evidence,Qwen_Qwen3-32B,0.6187
