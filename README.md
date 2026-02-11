@@ -44,7 +44,7 @@ Computes the negative average log-probability per question as an uncertainty sco
 
 ```bash
 python3 avg_logprobs_baselines.py \
-  --datasets gpqa mmlupro \
+  --datasets gpqa mmlupro scifact_without_evidence scifact_with_evidence\
   --models openai_gpt-oss-120b Qwen_Qwen3-32B \
   --results_filepath results/avg_logprobs_baselines.csv
 ```
@@ -57,9 +57,35 @@ Computes the average token entropy per question using top-k log-probabilities as
 
 ```bash
 python3 avg_token_entropy_baselines.py \
-  --datasets gpqa mmlupro \
+  --datasets gpqa mmlupro scifact_without_evidence scifact_with_evidence\
   --models openai_gpt-oss-120b Qwen_Qwen3-32B \
   --results_filepath results/avg_token_entropy_baselines.csv
+```
+
+Results are saved to the specified CSV path with columns: `dataset`, `model`, `auroc`.
+
+### Trace Length Baseline
+
+Uses the length of the reasoning trace (number of tokens) as an uncertainty score and reports AUROC.
+
+```bash
+python3 trace_length_baselines.py \
+  --datasets gpqa mmlupro scifact_without_evidence scifact_with_evidence\
+  --models openai_gpt-oss-120b Qwen_Qwen3-32B \
+  --results_filepath results/trace_length_baselines.csv
+```
+
+Results are saved to the specified CSV path with columns: `dataset`, `model`, `auroc`.
+
+### Normalized Trace Length Baseline
+
+Uses the z-score normalized trace length (number of tokens, standardized by mean and std across the dataset/model combination) as an uncertainty score and reports AUROC.
+
+```bash
+python3 normalized_trace_length_baselines.py \
+  --datasets gpqa mmlupro scifact_without_evidence scifact_with_evidence\
+  --models openai_gpt-oss-120b Qwen_Qwen3-32B \
+  --results_filepath results/normalized_trace_length_baselines.csv
 ```
 
 Results are saved to the specified CSV path with columns: `dataset`, `model`, `auroc`.

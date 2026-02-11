@@ -31,3 +31,29 @@ def average_token_entropy(token_logprobs: list[dict]):
         token_entropies.append(entropy)
     avg_token_entropy = average_logprobs(token_entropies)
     return avg_token_entropy
+
+def trace_length(tokens: list):
+    """
+    Compute the uncertainty as the length of the trace.
+
+    Args:
+        tokens (list): A list of tokens
+
+    Returns:    
+        float: The uncertainty as the length of the trace
+    """
+    return len(tokens)
+
+def normalized_trace_length(tokens: list, mean_length: float, std_length: float):
+    """
+    Compute the normalized length of the trace.
+    The normalized length is the trace length minus the mean length divided by the standard deviation of the trace length.
+    Args:
+        tokens (list): A list of tokens
+        mean_length (float): The mean length of the trace
+        std_length (float): The standard deviation of the trace length
+
+    Returns:
+        float: The normalized trace length
+    """
+    return (trace_length(tokens) - mean_length) / std_length
