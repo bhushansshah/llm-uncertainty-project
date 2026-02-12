@@ -103,3 +103,16 @@ python3 forking_tokens_baselines.py \
 
 Results are saved to the specified CSV path with columns: `dataset`, `model`, `auroc`.
 
+### Answer Probability Baseline
+
+Uses the probability of the answer token (extracted from the top log-probabilities at the answer position) as an uncertainty score. Examples where the answer token is not found in the top log-probabilities are excluded. Reports AUROC.
+
+```bash
+python3 answer_prob_baseline.py \
+  --datasets gpqa mmlupro scifact_without_evidence scifact_with_evidence\
+  --models openai_gpt-oss-120b Qwen_Qwen3-32B \
+  --results_filepath results/answer_prob_baselines.csv
+```
+
+Results are saved to the specified CSV path with columns: `dataset`, `model`, `auroc`.
+
