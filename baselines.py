@@ -103,7 +103,7 @@ def prob_answer_token(tokens: list, top_logprobs:list[dict], selected_option: st
             if selected_option in option_token_top_logprobs:
                 return 1 - np.exp(option_token_top_logprobs[selected_option])
             else:
-                return 0
+                return 1
         else:
             return None
     else:
@@ -112,7 +112,7 @@ def prob_answer_token(tokens: list, top_logprobs:list[dict], selected_option: st
         if selected_option in option_token_top_logprobs:
             return 1 - np.exp(option_token_top_logprobs[selected_option])
         else:
-            return 0
+            return 1
 
 def find_sublist(A, B):
     n, m = len(A), len(B)
@@ -145,5 +145,5 @@ def prob_answer_token_scifact(tokens: list, top_logprobs:list[dict], selected_op
                 total_logprob += pos_top_logprobs[token]
             else:
                 print(f"Token {token} not found in top logprobs")
-                return None
+                return 1
         return 1 - np.exp(total_logprob)

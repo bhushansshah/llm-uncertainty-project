@@ -1,6 +1,6 @@
 import argparse
 import pandas as pd
-
+import numpy as np
 from utils import load_results, compute_auroc
 from baselines import prob_answer_token, prob_answer_token_scifact
 from transformers import AutoTokenizer
@@ -80,17 +80,21 @@ def main():
         for model in args.models:
             print(f"Processing dataset={dataset}, model={model} ...")
             results = load_results(args.outputs_dir, dataset, model)
+            if len(results) == 0:
+                print(f"  No results found for dataset={dataset}, model={model}")
+                continue
+            print(f"  Loaded {len(results)} examples.")
             answer_probs, selected_examples_flag = compute_uncertainty_as_answer_prob(results, model, dataset)
             is_correct = []
             for i, item in enumerate(results):
                 if selected_examples_flag[i] == 1:
                     is_correct.append(int(item["is_correct"]))
-
+            accuracy = np.mean(is_correct)
             auroc = compute_auroc(answer_probs, is_correct)
 
 
             rows.append(
-                {"dataset": dataset, "model": model, "auroc": round(auroc, 4)}
+                {"dataset": dataset, "model": model, "auroc": round(auroc, 4), "accuracy": round(accuracy, 4), "num_selected_examples": len(is_correct)} 
             )
 
             print(f"  AUROC = {auroc:.4f}")
