@@ -97,7 +97,7 @@ Uses the probability of the answer token (extracted from the top log-probabiliti
 ```bash
 python3 answer_prob_baseline.py \
   --datasets gpqa mmlupro scifact_without_evidence scifact_with_evidence\
-  --models openai_gpt-oss-120b Qwen_Qwen3-32B \
+  --models openai_gpt-oss-120b Qwen_Qwen3-32B openai_gpt-oss-20b deepseek-ai_DeepSeek-R1-Distill-Llama-70B\
   --results_filepath results/answer_prob_baselines.csv
 ```
 
