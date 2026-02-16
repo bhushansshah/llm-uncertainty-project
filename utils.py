@@ -31,6 +31,21 @@ def load_results(outputs_dir, dataset, model):
         results.append(obj)
     return results
 
+def get_data_config(outputs_dir, dataset, model):
+    """
+    Get the data configuration for a given dataset and model.
+    Args:
+        outputs_dir (str): Path to the top-level outputs directory.
+        dataset (str): Dataset name (subfolder of outputs_dir).
+        model (str): Model name (subfolder of dataset folder).
+    Returns:
+        dict: The data configuration.
+    """
+    model_dir = os.path.join(outputs_dir, dataset, model)
+    config_path = os.path.join(model_dir, "config.json")
+    with open(config_path, "r") as f:
+        config = json.load(f)
+    return config
 
 def normalize(logits):
     exp_logits = np.exp(logits - np.max(logits))
@@ -101,3 +116,15 @@ def compute_auroc(scores, labels):
     labels = 1 - labels
     auroc = roc_auc_score(labels, scores)
     return auroc
+
+def correct_space_tokens(tokens):
+    """
+    Correct the space tokens in the tokens list.
+    """
+    result = []
+    for token in tokens:
+        if len(token) >= 1 and token[0] == "Ġ":
+            result.append(" " + token[1:])
+        else:
+            result.append(token)
+    return result

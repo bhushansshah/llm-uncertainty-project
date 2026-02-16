@@ -1,26 +1,21 @@
 import argparse
 import pandas as pd
 import numpy as np
-from utils import load_results, compute_auroc
+from utils import load_results, get_data_config, compute_auroc
 from baselines import prob_answer_token, prob_answer_token_scifact
 from transformers import AutoTokenizer
 
-def compute_uncertainty_as_answer_prob(results: list[dict], model:str, dataset:str):
+def compute_uncertainty_as_answer_prob(results: list[dict], model_name:str, dataset:str):
     """
     Compute the uncertainty as the probability of the answer token.
 
     Args:
         results (list[dict]): Loaded result dicts for one dataset/model.
-
+        model_name (str): The name of the model.
+        dataset (str): The name of the dataset.
     Returns:
         list[float]: The uncertainty as the probability of the answer token
     """
-    if model == "Qwen_Qwen3-32B":
-        model_name = "Qwen/Qwen3-32B"
-    elif model == "openai_gpt-oss-120b":
-        model_name = "openai/gpt-oss-120b"
-    else:
-        raise ValueError(f"Model {model} not supported")
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     answer_probs = []
     selected_examples_flag = []
@@ -31,8 +26,8 @@ def compute_uncertainty_as_answer_prob(results: list[dict], model:str, dataset:s
         if dataset == "scifact_with_evidence" or dataset == "scifact_without_evidence":
             answer_prob = prob_answer_token_scifact(tokens, top_logprobs, selected_option, tokenizer)
         else:
-            selected_option = " " + item["extracted_answer"]
-            answer_prob = prob_answer_token(tokens, top_logprobs, selected_option)
+            selected_option = item["extracted_answer"]
+            answer_prob = prob_answer_token(tokens, top_logprobs, selected_option, tokenizer)
         if answer_prob is not None:
             answer_probs.append(answer_prob)
             selected_examples_flag.append(1)
@@ -83,6 +78,8 @@ def main():
             if len(results) == 0:
                 print(f"  No results found for dataset={dataset}, model={model}")
                 continue
+            config = get_data_config(args.outputs_dir, dataset, model)
+            model = config["arguments"]["model"]
             print(f"  Loaded {len(results)} examples.")
             answer_probs, selected_examples_flag = compute_uncertainty_as_answer_prob(results, model, dataset)
             is_correct = []
