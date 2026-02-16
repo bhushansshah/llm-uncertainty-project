@@ -89,14 +89,18 @@ def main():
             print(f"Processing dataset={dataset}, model={model} ...")
             results = load_results(args.outputs_dir, dataset, model)
             print(f"  Loaded {len(results)} examples.")
+            if len(results) == 0:
+                print(f"  No results found for dataset={dataset}, model={model}")
+                continue
             forking_tokens_set = get_forking_tokens_set(results)
             num_forking_tokens_list = compute_num_forking_tokens(results, forking_tokens_set)
             is_correct = [int(item["is_correct"]) for item in results]
+            accuracy = np.mean([int(item["is_correct"]) for item in results])
             auroc = compute_auroc(num_forking_tokens_list, is_correct)
             print(f"  AUROC = {auroc:.4f}")
 
             rows.append(
-                {"dataset": dataset, "model": model, "auroc": round(auroc, 4)}
+                {"dataset": dataset, "model": model, "auroc": round(auroc, 4), "accuracy": round(accuracy, 4)}
             )
 
     # Save results

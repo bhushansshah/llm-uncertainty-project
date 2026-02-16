@@ -1,6 +1,6 @@
 import argparse
 import pandas as pd
-
+import numpy as np
 from utils import load_results, compute_auroc
 from baselines import average_token_entropy
 
@@ -63,14 +63,18 @@ def main():
             print(f"Processing dataset={dataset}, model={model} ...")
             results = load_results(args.outputs_dir, dataset, model)
             print(f"  Loaded {len(results)} examples.")
+            if len(results) == 0:
+                print(f"  No results found for dataset={dataset}, model={model}")
+                continue
             #print one example question and answer
             neg_avg_logprobs = compute_avg_token_entropy(results)
             is_correct = [int(item["is_correct"]) for item in results]
+            accuracy = np.mean([int(item["is_correct"]) for item in results])
             auroc = compute_auroc(neg_avg_logprobs, is_correct)
             print(f"  AUROC = {auroc:.4f}")
 
             rows.append(
-                {"dataset": dataset, "model": model, "auroc": round(auroc, 4)}
+                {"dataset": dataset, "model": model, "auroc": round(auroc, 4), "accuracy": round(accuracy, 4)}
             )
 
     # Save results
