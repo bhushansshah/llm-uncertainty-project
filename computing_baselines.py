@@ -2,7 +2,7 @@ import argparse
 import pandas as pd
 import numpy as np
 from utils import load_results, compute_auroc, get_data_config, token_entropy
-from baselines import average_logprobs, average_token_entropy, trace_length, num_forking_tokens, prob_answer_token, prob_answer_token_scifact
+from baselines import average_logprobs, average_token_entropy, trace_length, num_forking_tokens, normalized_num_forking_tokens, prob_answer_token, prob_answer_token_scifact
 import os
 from transformers import AutoTokenizer
 from collections import defaultdict
@@ -74,6 +74,22 @@ def compute_num_forking_tokens(results: list[dict], forking_tokens_set: set):
         num_forking_tokens_list.append(num_forking_tokens_count)
     return num_forking_tokens_list
 
+def compute_normalized_num_forking_tokens(results: list[dict], forking_tokens_set: set):
+    """
+    Compute the normalized number of forking tokens.
+    Args:
+        results (list[dict]): Loaded result dicts for one dataset-model pair.
+        forking_tokens_set (set): A set of forking tokens
+    Returns:
+        list[float]: The normalized number of forking tokens for each data point.
+    """
+    num_forking_tokens_list = []
+    for item in results:
+        tokens = item["response"]["logprobs"]["tokens"]
+        num_forking_tokens_count = normalized_num_forking_tokens(tokens, forking_tokens_set)
+        num_forking_tokens_list.append(num_forking_tokens_count)
+    return num_forking_tokens_list
+
 def compute_uncertainty_as_answer_prob(results: list[dict], model_name:str, dataset:str):
     """
     Compute the uncertainty as the probability of the answer token.
@@ -135,6 +151,7 @@ uncertainty_func_mapping = {
     "avg_token_entropy": compute_avg_token_entropy,
     "trace_length": compute_uncertainty_as_trace_length,
     "forking_tokens": compute_num_forking_tokens,
+    "normalized_forking_tokens": compute_normalized_num_forking_tokens,
     "answer_prob": compute_uncertainty_as_answer_prob,
 }
 
@@ -163,7 +180,7 @@ def main():
         nargs="+",
         required=True,
         help="List of baselines to compute.",
-        choices=["avg_logprobs", "avg_token_entropy", "trace_length", "forking_tokens", "answer_prob"],
+        choices=["avg_logprobs", "avg_token_entropy", "trace_length", "forking_tokens", "normalized_forking_tokens", "answer_prob"],
     )
     parser.add_argument(
         "--outputs_dir",
@@ -208,7 +225,7 @@ def main():
                     )
                     print(f"  AUROC = {auroc:.4f}")
                     continue
-                elif baseline == "forking_tokens":
+                elif baseline == "forking_tokens" or baseline == "normalized_forking_tokens":
                     forking_tokens_set = get_forking_tokens_set(results)
                     uncertainty_values = uncertainty_func(results, forking_tokens_set)
                     is_correct = [int(item["is_correct"]) for item in results]

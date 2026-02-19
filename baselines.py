@@ -75,6 +75,21 @@ def num_forking_tokens(tokens: list, forking_tokens: set):
             forking_tokens_count += 1
     return forking_tokens_count
 
+def normalized_num_forking_tokens(tokens: list, forking_tokens: set):
+    """
+    Compute the normalized number of forking tokens.
+    Args:
+        tokens (list): A list of tokens
+        forking_tokens (set): A set of forking tokens
+    Returns:
+        int: The number of forking tokens
+    """
+    forking_tokens_count = 0
+    for token in tokens:
+        if token in forking_tokens:
+            forking_tokens_count += 1
+    return forking_tokens_count / len(tokens)
+
 def prob_answer_token(tokens: list, top_logprobs:list[dict], selected_option: str, tokenizer:AutoTokenizer):
     # find the index of "</" token
     variant1 = "Answer: " + selected_option
