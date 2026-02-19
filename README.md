@@ -34,72 +34,17 @@ outputs/
     └── ...
 ```
 
-Each `result_*.json` file contains one data example with the model's response and log-probabilities.
+### Running Baselines
 
-## Reproducing Baseline Metrics
-
-### Average Log-Probability Baseline
-
-Computes the negative average log-probability per question as an uncertainty score and reports AUROC.
+`computing_baselines.py` is a unified script that can run any combination of baselines in a single command. Available baselines: `neg_avg_logprobs`, `avg_token_entropy`, `trace_length`, `num_forking_tokens`, `answer_prob`.
 
 ```bash
-python3 avg_logprobs_baselines.py \
-  --datasets gpqa mmlupro scifact_without_evidence scifact_with_evidence\
-  --models openai_gpt-oss-120b Qwen_Qwen3-32B openai_gpt-oss-20b deepseek-ai_DeepSeek-R1-Distill-Llama-70B\
-  --results_filepath results/avg_logprobs_baselines.csv
+python3 computing_baselines.py \
+  --datasets gpqa mmlupro scifact_without_evidence scifact_with_evidence \
+  --models openai_gpt-oss-120b Qwen_Qwen3-32B openai_gpt-oss-20b deepseek-ai_DeepSeek-R1-Distill-Llama-70B \
+  --baselines avg_logprobs avg_token_entropy trace_length forking_tokens answer_prob \
+  --results_dir results
 ```
 
-Results are saved to the specified CSV path with columns: `dataset`, `model`, `auroc`.
-
-### Average Token Entropy Baseline
-
-Computes the average token entropy per question using top-k log-probabilities as an uncertainty score and reports AUROC.
-
-```bash
-python3 avg_token_entropy_baselines.py \
-  --datasets gpqa mmlupro scifact_without_evidence scifact_with_evidence\
-  --models openai_gpt-oss-120b Qwen_Qwen3-32B openai_gpt-oss-20b deepseek-ai_DeepSeek-R1-Distill-Llama-70B\
-  --results_filepath results/avg_token_entropy_baselines.csv
-```
-
-Results are saved to the specified CSV path with columns: `dataset`, `model`, `auroc`.
-
-### Trace Length Baseline
-
-Uses the length of the reasoning trace (number of tokens) as an uncertainty score and reports AUROC.
-
-```bash
-python3 trace_length_baselines.py \
-  --datasets gpqa mmlupro scifact_without_evidence scifact_with_evidence\
-  --models openai_gpt-oss-120b Qwen_Qwen3-32B openai_gpt-oss-20b deepseek-ai_DeepSeek-R1-Distill-Llama-70B\
-  --results_filepath results/trace_length_baselines.csv
-```
-
-Results are saved to the specified CSV path with columns: `dataset`, `model`, `auroc`.
-
-### Forking Tokens Baseline
-
-Identifies the top-50 "forking tokens" (tokens with the highest average entropy across the dataset, appearing in at least 20 examples) and counts how many forking tokens appear in each response as an uncertainty score. Reports AUROC.
-
-```bash
-python3 forking_tokens_baselines.py \
-  --datasets gpqa mmlupro scifact_without_evidence scifact_with_evidence\
-  --models openai_gpt-oss-120b Qwen_Qwen3-32B openai_gpt-oss-20b deepseek-ai_DeepSeek-R1-Distill-Llama-70B\
-  --results_filepath results/forking_tokens_baselines.csv
-```
-
-Results are saved to the specified CSV path with columns: `dataset`, `model`, `auroc`.
-
-### Answer Probability Baseline
-
-Uses the probability of the answer token (extracted from the top log-probabilities at the answer position) as an uncertainty score. Examples where the answer token is not found in the top log-probabilities are excluded. Reports AUROC.
-
-```bash
-python3 answer_prob_baseline.py \
-  --datasets gpqa mmlupro scifact_without_evidence scifact_with_evidence\
-  --models openai_gpt-oss-120b Qwen_Qwen3-32B openai_gpt-oss-20b deepseek-ai_DeepSeek-R1-Distill-Llama-70B\
-  --results_filepath results/answer_prob_baselines.csv
-```
-
-Results are saved to the specified CSV path with columns: `dataset`, `model`, `auroc`.
+Each baseline's results are saved as a separate CSV file in the results directory (e.g., `results/neg_avg_logprobs_baselines.csv`), with columns: `dataset`, `model`, `auroc`, `accuracy`.
 
