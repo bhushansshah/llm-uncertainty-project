@@ -42,7 +42,7 @@ outputs/
 python3 computing_baselines.py \
   --datasets gpqa mmlupro scifact_without_evidence scifact_with_evidence \
   --models openai_gpt-oss-120b Qwen_Qwen3-32B openai_gpt-oss-20b deepseek-ai_DeepSeek-R1-Distill-Llama-70B \
-  --baselines avg_logprobs avg_token_entropy trace_length forking_tokens answer_prob \
+  --baselines avg_logprobs avg_token_entropy trace_length forking_tokens normalized_forking_tokens answer_prob \
   --results_dir results
 ```
 
