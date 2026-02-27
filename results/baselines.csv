@@ -1,0 +1,16 @@
+Model,Dataset,Accuracy,Num Selected Examples,Answer Probs accuracy,Answer Probs Num Selected Examples,Avg. Neg Log Prob,Token Entropy,Trace Length,Forking Tokens,Normalized Forking Tokens,Answer Probs
+Qwen/Qwen3-32B,gpqa,0.5758,198.0,0.7261,157.0,0.6835,0.6891,0.8443,0.8391,0.7321,0.675
+Qwen/Qwen3-32B,mmlupro,0.8571,70.0,0.8696,69.0,0.635,0.6233,0.7492,0.7217,0.5183,0.5556
+Qwen/Qwen3-32B,scifact_with_evidence,0.8301,206.0,0.9828,174.0,0.6987,0.7146,0.8413,0.8129,0.6206,0.308
+Qwen/Qwen3-32B,scifact_without_evidence,0.5728,206.0,0.7662,154.0,0.6113,0.6187,0.6987,0.6995,0.6076,0.5864
+deepseek-ai/DeepSeek-R1-Distill-Llama-70B,gpqa,0.6162,198.0,0.627,185.0,0.6787,0.6832,0.7086,0.7475,0.6073,0.4957
+deepseek-ai/DeepSeek-R1-Distill-Llama-70B,mmlupro,0.8429,70.0,0.8551,69.0,0.7273,0.718,0.5809,0.6086,0.5778,0.5
+deepseek-ai/DeepSeek-R1-Distill-Llama-70B,scifact_without_evidence,0.5728,206.0,0.7284,162.0,0.5911,0.6383,0.6579,0.6911,0.5863,0.5312
+openai/gpt-oss-120b,gpqa,0.6414,198.0,0.7135,171.0,0.5964,0.596,0.656,0.7132,0.6632,0.4581
+openai/gpt-oss-120b,mmlupro,0.8714,70.0,0.9385,65.0,0.5337,0.5301,0.6958,0.6903,0.4827,0.6885
+openai/gpt-oss-120b,scifact_with_evidence,0.8738,206.0,1.0,180.0,0.6511,0.6622,0.6728,0.711,0.6796,
+openai/gpt-oss-120b,scifact_without_evidence,0.7524,206.0,0.8659,179.0,0.7065,0.6921,0.6096,0.6764,0.6942,0.4794
+openai/gpt-oss-20b,gpqa,0.5808,198.0,0.7012,164.0,0.5432,0.551,0.826,0.8234,0.5489,0.4469
+openai/gpt-oss-20b,mmlupro,0.8143,70.0,0.8143,70.0,0.7733,0.7692,0.7679,0.803,0.753,0.3839
+openai/gpt-oss-20b,scifact_with_evidence,0.8204,206.0,0.9826,172.0,0.7,0.7476,0.728,0.7707,0.6823,0.8669
+openai/gpt-oss-20b,scifact_without_evidence,0.7039,206.0,0.8286,175.0,0.67,0.6569,0.6923,0.7141,0.658,0.5513
