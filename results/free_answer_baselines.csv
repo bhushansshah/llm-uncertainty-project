@@ -1,0 +1,5 @@
+Model,Dataset,Accuracy,Num Selected Examples,Answer Probs accuracy,Answer Probs Num Selected Examples,Avg. Neg Log Prob,Token Entropy,Trace Length,Forking Tokens,Normalized Forking Tokens,Answer Probs
+Qwen_Qwen3-32B,gpqa_free_answer,0.254,126,,,0.7826,0.7839,0.8594,0.858,0.7374,
+Qwen_Qwen3-32B,mmlupro_free_answer,0.4571,70,,,0.8026,0.8084,0.5991,0.6678,0.7138,
+openai_gpt-oss-120b,gpqa_free_answer,0.4524,126,,,0.6311,0.6367,0.7897,0.7736,0.6479,
+openai_gpt-oss-120b,mmlupro_free_answer,0.5714,70,,,0.7117,0.7167,0.7488,0.8154,0.7171,

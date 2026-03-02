@@ -19,7 +19,11 @@ def compute_neg_avg_logprobs(results):
     """
     neg_avg_logprobs = []
     for item in results:
-        logprobs = item["response"]["logprobs"]["token_logprobs"]
+        logprobs = item["response"]["logprobs"].get("token_logprobs", None)
+        if logprobs is None:
+            logprobs = item["response"]["logprobs"].get("logprobs", None)
+        if logprobs is None:
+            raise ValueError(f"No logprobs found for item {item}")
         avg_logprobs = average_logprobs(logprobs)
         neg_avg_logprobs.append(-avg_logprobs)
     return neg_avg_logprobs
@@ -204,6 +208,13 @@ def main():
         required=True,
         help="Path to save the results directory.",
     )
+
+    parser.add_argument(
+        "--results_file",
+        type=str,
+        default="baselines.csv",
+        help="Path to the results file (default: baselines.csv).",
+    )
     args = parser.parse_args()
 
     
@@ -269,7 +280,7 @@ def main():
             baselines_result = rename_keys(baselines_result, rename_map)
             results_list.append(baselines_result)
     # Save results
-    csv_path = os.path.join(results_dir, f"baselines.csv")
+    csv_path = os.path.join(results_dir, args.results_file)
     # Load existing results into a DataFrame
     if os.path.exists(csv_path):
         df = pd.read_csv(csv_path)

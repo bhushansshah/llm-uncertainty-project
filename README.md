@@ -48,6 +48,19 @@ python3 computing_baselines.py \
 
 Each baseline's results are saved as a separate CSV file in the results directory (e.g., `results/neg_avg_logprobs_baselines.csv`), with columns: `dataset`, `model`, `auroc`, `accuracy`.
 
+### Getting Freeform Baselines
+
+Run `computing_baselines.py` with the is a unified script that can run any combination of baselines in a single command. Available baselines: `neg_avg_logprobs`, `avg_token_entropy`, `trace_length`, `num_forking_tokens`.
+
+```bash
+python3 computing_baselines.py \
+  --datasets gpqa_free_answer mmlupro_free_answer \
+  --models openai_gpt-oss-120b Qwen_Qwen3-32B \
+  --baselines avg_logprobs avg_token_entropy trace_length forking_tokens normalized_forking_tokens \
+  --results_dir results \
+  --results_file free_answer_baselines.csv
+```
+
 ### Running Verbalized Baselines
 
 `verbalized_comparison.py` is the corresponding script for **verbalized** outputs, where result files store token-level logprobs in `response.logprobs.content` (a different JSON shape than `computing_baselines.py` expects).
