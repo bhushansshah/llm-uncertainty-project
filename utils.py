@@ -67,6 +67,13 @@ def token_entropy(token_logprobs_dict):
 
     return H
 
+def get_top_k_entropy_tokens(logprobs: list[dict], k: int):
+    token_entropies = []
+    for logprob in logprobs:
+        entropy = token_entropy(logprob)
+        token_entropies.append(entropy)
+    top_k_entropy_tokens = np.argsort(token_entropies)[-k:]
+    return top_k_entropy_tokens
 
 def get_reasoning_steps(text):
     if '</think>' in text:
