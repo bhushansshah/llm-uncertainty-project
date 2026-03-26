@@ -29,6 +29,10 @@ _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
+from abstain_batch_utils import (  # noqa: E402
+    METHOD_NEG_LOGPROB,
+    discover_models_in_dataset,
+)
 from abstain_step_entropy import (  # noqa: E402
     abstention_f1,
     build_active_and_tau_with_min_support,
@@ -462,39 +466,38 @@ def _sanitize_filename_component(name: str) -> str:
     return safe.strip() or "model"
 
 
-def discover_model_result_dirs(gpqa_root: str) -> list[tuple[str, str]]:
-    root = Path(gpqa_root)
-    out: list[tuple[str, str]] = []
-    if not root.is_dir():
-        raise FileNotFoundError(f"Not a directory: {gpqa_root}")
-    for p in sorted(root.iterdir()):
-        if not p.is_dir():
-            continue
-        pattern = str(p / "result_*.json")
-        if glob.glob(pattern):
-            out.append((p.name, str(p.resolve())))
-    return out
-
-
-def run_gpqa_models(
-    gpqa_root: str,
-    image_dir: str,
-    summary_csv: str,
+def run_dataset_batch(
+    dataset_dir: str,
+    model_names: list[str],
+    abstaining_results_dir: str,
+    abstaining_plots_dir: str,
     val_size: int,
     seed: int,
     min_support_per_class: int,
 ) -> None:
-    model_dirs = discover_model_result_dirs(gpqa_root)
+    """
+    Batch mode: ``dataset_dir`` is ``<outputs_root>/<dataset_name>/`` (one folder per model).
+    Writes ``avg_entropy.csv`` (summary only; same as pre-refactor batch) under
+    ``abstaining_results_dir/<dataset>/<neg_logprob>/`` and plots under
+    ``abstaining_plots_dir/<dataset>/<neg_logprob>/``.
+    """
+    dataset_path = Path(dataset_dir)
+    dataset_name = dataset_path.name
+    model_dirs = discover_models_in_dataset(dataset_dir, model_names)
     if not model_dirs:
-        print(f"No subfolders with result_*.json under {gpqa_root}")
+        print(f"No usable model directories under {dataset_dir}")
         return
 
-    Path(image_dir).mkdir(parents=True, exist_ok=True)
-    rows: list[dict[str, str | int | float]] = []
+    plots_dir = Path(abstaining_plots_dir) / dataset_name / METHOD_NEG_LOGPROB
+    results_dir = Path(abstaining_results_dir) / dataset_name / METHOD_NEG_LOGPROB
+    plots_dir.mkdir(parents=True, exist_ok=True)
+    results_dir.mkdir(parents=True, exist_ok=True)
 
-    for model_name, results_dir in model_dirs:
-        print(f"\n{'='*60}\nModel: {model_name}\n{results_dir}\n{'='*60}")
-        data = load_results_flat_dir(results_dir)
+    summary_rows: list[dict[str, str | int | float]] = []
+
+    for model_name, res_dir in model_dirs:
+        print(f"\n{'='*60}\nModel: {model_name}\n{res_dir}\n{'='*60}")
+        data = load_results_flat_dir(res_dir)
         n = len(data)
         if n <= val_size:
             print(f"SKIP: need more than val_size={val_size} examples, got {n}")
@@ -512,7 +515,7 @@ def run_gpqa_models(
             print(f"  {k}: {v}")
 
         safe = _sanitize_filename_component(model_name)
-        plot_path = os.path.join(image_dir, f"{safe}_val_step_neg_logprob.png")
+        plot_path = os.path.join(plots_dir, f"{safe}_val_step_neg_logprob.png")
 
         m = print_test_report(
             val_data,
@@ -521,25 +524,24 @@ def run_gpqa_models(
             plot_path=plot_path,
             model_name=model_name,
         )
-        rows.append(metrics_to_summary_row(model_name, best, m))
+        summary_rows.append(metrics_to_summary_row(model_name, best, m))
 
-    if not rows:
-        print("No models produced results; summary CSV not written.")
+    if not summary_rows:
+        print("No models produced results; result CSVs not written.")
         return
 
-    out_path = Path(summary_csv)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(out_path, "w", newline="", encoding="utf-8") as f:
+    summary_path = results_dir / "avg_entropy.csv"
+    with open(summary_path, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=SUMMARY_CSV_COLUMNS, extrasaction="ignore")
         w.writeheader()
-        for row in rows:
+        for row in summary_rows:
             w.writerow(row)
-    print(f"\nWrote summary CSV ({len(rows)} models): {summary_csv}")
+    print(f"\nWrote summary CSV ({len(summary_rows)} models): {summary_path}")
 
 
 def main() -> None:
     p = argparse.ArgumentParser(
-        description="Step −log p abstention grid + test (single dir or GPQA multi-model)"
+        description="Step −log p abstention grid + test (single model dir or batch over outputs layout)"
     )
     p.add_argument(
         "--results_dir",
@@ -548,22 +550,34 @@ def main() -> None:
         help="Directory containing result_0.json, ... (single-model mode)",
     )
     p.add_argument(
-        "--gpqa_root",
+        "--outputs_dir",
         type=str,
         default=None,
-        help="Parent directory whose subfolders each hold result_*.json per model (batch mode)",
+        help="Root with subdirs outputs/<dataset>/<model>/ (batch mode; use with --dataset)",
     )
     p.add_argument(
-        "--image_dir",
+        "--dataset",
         type=str,
         default=None,
-        help="Directory for per-model validation plots (required with --gpqa_root)",
+        help="Dataset folder name under --outputs_dir (batch mode)",
     )
     p.add_argument(
-        "--summary_csv",
-        type=str,
+        "--models",
+        nargs="*",
         default=None,
-        help="GPQA summary CSV path (required with --gpqa_root)",
+        help="Model folder names to include (batch mode). If omitted, all models under the dataset are used.",
+    )
+    p.add_argument(
+        "--abstaining_results_dir",
+        type=str,
+        default="abstaining_results",
+        help="Root for abstaining_results/<dataset>/neg_logprob/avg_entropy.csv (batch mode; summary only)",
+    )
+    p.add_argument(
+        "--abstaining_plots_dir",
+        type=str,
+        default="abstaining_plots",
+        help="Root for abstaining_plots/<dataset>/neg_logprob/*.png (batch mode)",
     )
     p.add_argument("--val_size", type=int, default=60, help="Validation set size (rest is test)")
     p.add_argument("--seed", type=int, default=42)
@@ -583,13 +597,14 @@ def main() -> None:
     p.add_argument("--no_plot", action="store_true", help="Do not write validation plot")
     args = p.parse_args()
 
-    if args.gpqa_root:
-        if not args.image_dir or not args.summary_csv:
-            p.error("--gpqa_root requires --image_dir and --summary_csv")
-        run_gpqa_models(
-            args.gpqa_root,
-            args.image_dir,
-            args.summary_csv,
+    if args.outputs_dir is not None:
+        if not args.dataset:
+            p.error("--outputs_dir requires --dataset")
+        run_dataset_batch(
+            os.path.join(args.outputs_dir, args.dataset),
+            list(args.models or []),
+            args.abstaining_results_dir,
+            args.abstaining_plots_dir,
             args.val_size,
             args.seed,
             args.min_support_per_class,
@@ -597,7 +612,7 @@ def main() -> None:
         return
 
     if not args.results_dir:
-        p.error("Provide --results_dir (single model) or --gpqa_root (batch)")
+        p.error("Provide --results_dir (single model) or --outputs_dir and --dataset (batch)")
 
     data = load_results_flat_dir(args.results_dir)
     print(f"Loaded {len(data)} result files from {args.results_dir}")

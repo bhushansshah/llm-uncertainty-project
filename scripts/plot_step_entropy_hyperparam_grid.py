@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Visualize validation F1 over the step-entropy abstention grid from
-``abstain_step_entropy_experiment.py --output_csv`` or the combined GPQA
-``abstaining_results/gpqa/grid.csv``.
+``abstain_step_entropy_experiment.py --output_csv`` or a combined batch CSV such as
+``abstaining_results/<dataset>/step_entropy/grid.csv``.
 
 The grid has four tunable hyperparameters (chunk_size, delta, noise, ground_threshold) plus
 ``min_support_per_class`` (fixed for a given CSV run). This script produces **two** figures
@@ -14,9 +14,9 @@ per run (or **per model** when the CSV has a ``model_name`` column):
 2. **Faceted scatter** — One subplot per **delta**. Each point is **one full combination**;
    **x** = chunk_size, **y** = validation F1, **color** = noise, **marker size** = ground_threshold.
 
-**GPQA combined CSV** (multiple ``model_name`` values): writes
-``<output_dir>/<SafeModelName>_summary.png`` and ``_detail.png`` for each model (default
-``output_dir`` = ``abstaining_plots/gpqa``).
+**Multi-model CSV** (multiple ``model_name`` values): writes
+``<output_dir>/<SafeModelName>_summary.png`` and ``_detail.png`` for each model (e.g.
+``--output_dir abstaining_plots/gpqa/step_entropy``).
 
 **Single-model CSV** (no ``model_name`` column): writes ``<prefix>_summary.png`` and
 ``<prefix>_detail.png`` as before.
@@ -26,7 +26,7 @@ Usage:
     --output_prefix abstention_grid_viz
 
   python scripts/plot_step_entropy_hyperparam_grid.py \\
-    --csv abstaining_results/gpqa/grid.csv --output_dir abstaining_plots/gpqa
+    --csv abstaining_results/gpqa/step_entropy/grid.csv --output_dir abstaining_plots/gpqa/step_entropy
 """
 
 from __future__ import annotations

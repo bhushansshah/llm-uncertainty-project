@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """
-Plot **cumulative (aggregated) entropy** per step on the **validation** split only.
+Plot **per-step mean chunk entropy** (simple step entropy) on the **validation** split only.
 
-For each response, step ``t`` uses the **sum of mean chunk entropies** from chunk ``0`` through ``t``
-(non-overlapping chunks of ``chunk_size`` tokens over thinking-only token entropies). Same chunking
-as abstention / ``val_step_neg_logprob_plot.py``.
+For each response, step ``j`` is the **mean token entropy within chunk ``j``** (non-overlapping
+chunks of ``chunk_size`` thinking-only tokens). Same signal as ``abstain_step_entropy_experiment.py``
+and ``chunk_step_means`` in ``abstain_step_entropy.py`` — **not** cumulative (see
+``val_step_agg_entropy_plot.py`` for cumulative sums).
 
 Reads ``<outputs_dir>/<dataset>/<model>/result_*.json`` and writes one combined figure to
-``abstaining_validation_plot/<dataset>/<model_safe>_val_step_agg_entropy.png``.
+``abstaining_validation_plot/<dataset>/<model_safe>_val_step_entropy.png``.
 """
 
 from __future__ import annotations
@@ -27,7 +28,6 @@ if str(_ROOT) not in sys.path:
 
 from abstain_step_entropy import (  # noqa: E402
     chunk_step_means,
-    cumulative_sum_chunk_means,
     token_entropies_thinking_only,
 )
 from sklearn.model_selection import train_test_split  # noqa: E402
@@ -112,7 +112,7 @@ def val_step_mean_var_count_from_step_lists(
     return mean_corr, mean_inc, var_corr, var_inc, n_corr, n_inc
 
 
-def plot_val_agg_entropy_combined(
+def plot_val_step_entropy_combined(
     mean_correct: np.ndarray,
     mean_incorrect: np.ndarray,
     var_correct: np.ndarray,
@@ -143,7 +143,7 @@ def plot_val_agg_entropy_combined(
             mean_correct[mask_c],
             color="tab:green",
             linewidth=2,
-            label="Mean cum. entropy (correct)",
+            label="Mean chunk entropy (correct)",
         )
     if np.any(mask_i):
         ax0.plot(
@@ -151,11 +151,11 @@ def plot_val_agg_entropy_combined(
             mean_incorrect[mask_i],
             color="tab:orange",
             linewidth=2,
-            label="Mean cum. entropy (incorrect)",
+            label="Mean chunk entropy (incorrect)",
         )
-    ax0.set_ylabel("Cumulative entropy\n(sum of chunk means, 0…t)")
+    ax0.set_ylabel("Mean H per chunk\n(within chunk, thinking tokens)")
     ax0.set_title(
-        "(1) Mean cumulative entropy vs step — validation; per-step mean over responses that reach that step"
+        "(1) Mean chunk entropy vs step — validation; per-step mean over responses that reach that step"
     )
     ax0.legend(loc="best", fontsize=8)
     ax0.grid(True, alpha=0.3)
@@ -168,7 +168,7 @@ def plot_val_agg_entropy_combined(
             var_correct[mask_vc],
             color="tab:green",
             linewidth=2,
-            label="Var(cum. entropy) (correct)",
+            label="Var(chunk mean H) (correct)",
         )
     if np.any(mask_vi):
         ax1.plot(
@@ -176,9 +176,9 @@ def plot_val_agg_entropy_combined(
             var_incorrect[mask_vi],
             color="tab:orange",
             linewidth=2,
-            label="Var(cum. entropy) (incorrect)",
+            label="Var(chunk mean H) (incorrect)",
         )
-    ax1.set_ylabel("Variance of cumulative entropy")
+    ax1.set_ylabel("Variance of chunk mean entropy")
     ax1.set_title("(2) Population variance across validation examples at each step")
     ax1.legend(loc="best", fontsize=8)
     ax1.grid(True, alpha=0.3)
@@ -194,7 +194,7 @@ def plot_val_agg_entropy_combined(
     if len(j) > 0:
         ax2.set_xlim(j[0] - 0.5, j[-1] + 0.5)
 
-    supt = f"Validation — cumulative chunk entropy | chunk_size={chunk_size} tokens/chunk"
+    supt = f"Validation — per-chunk mean entropy (step entropy) | chunk_size={chunk_size} tokens/chunk"
     if title_suffix:
         supt = f"{title_suffix}\n{supt}"
     fig.suptitle(supt, fontsize=12, y=1.02)
@@ -205,7 +205,7 @@ def plot_val_agg_entropy_combined(
 
 def main() -> None:
     p = argparse.ArgumentParser(
-        description="Plot validation cumulative (aggregated) entropy vs step (correct vs incorrect)"
+        description="Plot validation per-chunk mean entropy vs step (correct vs incorrect)"
     )
     p.add_argument(
         "--outputs_dir",
@@ -257,12 +257,11 @@ def main() -> None:
     incorrect_steps: list[list[float]] = []
     for d in val_data:
         ent = token_entropies_thinking_only(d)
-        chunk_means = chunk_step_means(ent, args.chunk_size)
-        agg = cumulative_sum_chunk_means(chunk_means)
+        steps = chunk_step_means(ent, args.chunk_size)
         if d.get("is_correct"):
-            correct_steps.append(agg)
+            correct_steps.append(steps)
         else:
-            incorrect_steps.append(agg)
+            incorrect_steps.append(steps)
 
     mean_corr, mean_inc, var_corr, var_inc, n_corr, n_inc = (
         val_step_mean_var_count_from_step_lists(correct_steps, incorrect_steps)
@@ -271,10 +270,10 @@ def main() -> None:
     out_dir = Path(VALIDATION_PLOT_ROOT) / args.dataset
     out_dir.mkdir(parents=True, exist_ok=True)
     safe_model = _sanitize_filename_component(args.model)
-    output_path = str(out_dir / f"{safe_model}_val_step_agg_entropy.png")
+    output_path = str(out_dir / f"{safe_model}_val_step_entropy.png")
     title_suffix = args.title if args.title is not None else args.model
 
-    plot_val_agg_entropy_combined(
+    plot_val_step_entropy_combined(
         mean_corr,
         mean_inc,
         var_corr,

@@ -1,77 +1,122 @@
+#!/usr/bin/env python3
+"""
+Run abstention experiments for each (dataset, method) pair over model subfolders under
+``outputs_dir/<dataset>/<model>/`` (see README). Delegates to the per-method scripts in
+``scripts/``.
+"""
+
+from __future__ import annotations
+
+import argparse
 import os
-import random
-from datasets import load_dataset
-from openai import OpenAI
-from dotenv import load_dotenv
+import subprocess
+import sys
+from pathlib import Path
 
-load_dotenv()
+_ROOT = Path(__file__).resolve().parent
+_SCRIPTS = _ROOT / "scripts"
 
-PROMPT_TEMPLATE = (
-    " Answer the question by choosing one of the provided options.\n"
-    "Provide the final answer in the last line, prefixed with \"Answer:\". "
-    "Do not answer with a full sentence. Just provide the letter of the correct choice, like: Answer: A\n\n"
-    "Here is the question:\n{question}\n{choices}\n"
-)
+METHOD_TO_SCRIPT = {
+    "step_entropy": "abstain_step_entropy_experiment.py",
+    "neg_logprob": "abstain_step_neg_logprob_experiment.py",
+    "agg_entropy": "abstain_step_agg_entropy_experiment.py",
+}
 
-data = load_dataset("Idavidrein/gpqa", "gpqa_diamond", split="train")
-row = data[random.randint(0, len(data) - 1)]
 
-options = ["Correct Answer", "Incorrect Answer 1", "Incorrect Answer 2", "Incorrect Answer 3"]
-random.shuffle(options)
-symbols = ["A)", "B)", "C)", "D)"]
-choices_str = "\n".join(symbols[i] + row[options[i]] for i in range(4))
-gold_option = symbols[options.index("Correct Answer")].replace(")", "")
+def main() -> None:
+    p = argparse.ArgumentParser(
+        description="Run abstention batch jobs: outputs/<dataset>/<model>/ → "
+        "abstaining_results/<dataset>/<method>/ and abstaining_plots/<dataset>/<method>/"
+    )
+    p.add_argument(
+        "--outputs_dir",
+        type=str,
+        required=True,
+        help="Root directory (e.g. outputs) containing <dataset>/<model>/result_*.json",
+    )
+    p.add_argument(
+        "--datasets",
+        nargs="+",
+        required=True,
+        help="Dataset folder names (immediate children of --outputs_dir)",
+    )
+    p.add_argument(
+        "--models",
+        nargs="*",
+        default=None,
+        help="Model folder names to include. Omit to run every model found under each dataset.",
+    )
+    p.add_argument(
+        "--methods",
+        nargs="+",
+        choices=list(METHOD_TO_SCRIPT.keys()),
+        default=["step_entropy", "neg_logprob", "agg_entropy"],
+        help="Which abstention pipelines to run (default: all three)",
+    )
+    p.add_argument(
+        "--abstaining_results_dir",
+        type=str,
+        default="abstaining_results",
+        help="Root for per-dataset/method CSVs (default: abstaining_results)",
+    )
+    p.add_argument(
+        "--abstaining_plots_dir",
+        type=str,
+        default="abstaining_plots",
+        help="Root for per-dataset/method validation plots (default: abstaining_plots)",
+    )
+    p.add_argument("--val_size", type=int, default=60)
+    p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--min_support_per_class", type=int, default=3)
+    args = p.parse_args()
 
-prompt = PROMPT_TEMPLATE.format(question=row["Question"], choices=choices_str)
+    outputs_root = os.path.abspath(args.outputs_dir)
 
-print("=== Question ===")
-print(prompt)
-print(f"\n(Gold answer: {gold_option})\n")
+    for dataset in args.datasets:
+        ds_path = os.path.join(outputs_root, dataset)
+        if not os.path.isdir(ds_path):
+            print(f"SKIP: missing dataset directory: {ds_path}")
+            continue
 
-client = OpenAI(
-    base_url="https://router.huggingface.co/v1",
-    api_key=os.environ["HF_TOKEN"],
-)
+        for method in args.methods:
+            script_path = _SCRIPTS / METHOD_TO_SCRIPT[method]
+            if not script_path.is_file():
+                print(f"SKIP: script not found: {script_path}")
+                continue
 
-stream = client.responses.create(
-    model="openai/gpt-oss-120b",
-    input=[{"role": "user", "content": prompt}],
-    temperature=0.7,
-    top_p=0.95,
-    reasoning={"effort": "high", "summary": "auto"},
-    stream=True,
-)
+            cmd: list[str] = [
+                sys.executable,
+                str(script_path),
+                "--outputs_dir",
+                outputs_root,
+                "--dataset",
+                dataset,
+                "--abstaining_results_dir",
+                args.abstaining_results_dir,
+                "--abstaining_plots_dir",
+                args.abstaining_plots_dir,
+                "--val_size",
+                str(args.val_size),
+                "--seed",
+                str(args.seed),
+                "--min_support_per_class",
+                str(args.min_support_per_class),
+            ]
+            if args.models:
+                cmd.extend(["--models", *args.models])
 
-in_reasoning = False
-in_output = False
-count = 0
-thinking_text = ""
-current_ind = -1
-for event in stream:
-    count += 1
+            print("\n" + "=" * 72)
+            print(f"dataset={dataset}  method={method}")
+            print(" ".join(cmd))
+            print("=" * 72 + "\n")
 
-    if event.type == "response.reasoning_text.delta":
-        if not in_reasoning:
-            print("=== Reasoning ===")
-            in_reasoning = True
-        thinking_text += event.delta
-        if len(thinking_text) - 1 - current_ind > 200:
-            print('--------------------------------')
-            print(thinking_text[current_ind:])
-            current_ind = len(thinking_text)
-        
-    elif event.type == "response.reasoning_text.done":
-        if len(thinking_text) > current_ind:
-            print("--------------------------------")
-            print(thinking_text[current_ind:])
-            print("Reasoning done")
-            current_ind = len(thinking_text)
-    elif event.type == "response.content_part.done":
-        if not in_output:
-            if in_reasoning:
-                print("\n")
-            print("=== Answer ===")
-            in_output = True
-        print(event.delta, end="", flush=True)
-print()
-print("Total chunks:", count)
+            r = subprocess.run(cmd, cwd=str(_ROOT))
+            if r.returncode != 0:
+                print(
+                    f"Warning: exit code {r.returncode} for dataset={dataset} method={method}",
+                    file=sys.stderr,
+                )
+
+
+if __name__ == "__main__":
+    main()

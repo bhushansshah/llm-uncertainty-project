@@ -7,16 +7,8 @@ For each thinking token, uncertainty = -log p where p is the sampled token's pro
 Steps are non-overlapping chunks of
 `chunk_size` tokens (mean NLL within each chunk), same indexing as the abstention plots.
 
-Default output is **one figure** with three vertically stacked panels (mean, variance, support
-counts) and a **shared x-axis** (`sharex=True`) so step indices align across panels.
-Use ``--separate_plots`` to also write three standalone PNGs as before.
-
-Usage:
-  python scripts/val_step_neg_logprob_plot.py \\
-    --results_dir path/to/result_jsons \\
-    --val_size 60 \\
-    --chunk_size 50 \\
-    --output_path neg_logprob_vs_step.png
+Writes one combined figure (three stacked panels, shared x-axis) to
+``abstaining_validation_plot/<dataset>/<model_safe>_val_step_neg_logprob.png``.
 """
 
 from __future__ import annotations
@@ -39,6 +31,13 @@ from abstain_step_entropy import (  # noqa: E402
     token_neg_log_probs_thinking_only,
 )
 from sklearn.model_selection import train_test_split  # noqa: E402
+
+VALIDATION_PLOT_ROOT = "abstaining_validation_plot"
+
+
+def _sanitize_filename_component(name: str) -> str:
+    safe = "".join(c if c not in r'\/:*?"<>|' else "_" for c in name)
+    return safe.strip() or "model"
 
 
 def load_results_flat_dir(results_dir: str) -> list[dict]:
@@ -117,131 +116,6 @@ def val_step_mean_var_count_from_step_lists(
             var_inc[j] = float(np.var(ivals, ddof=0))
 
     return mean_corr, mean_inc, var_corr, var_inc, n_corr, n_inc
-
-
-def plot_val_mean_neg_logprob_vs_step(
-    mean_correct: np.ndarray,
-    mean_incorrect: np.ndarray,
-    chunk_size: int,
-    out_path: str,
-    title_suffix: str | None = None,
-) -> None:
-    import matplotlib.pyplot as plt
-
-    j = np.arange(len(mean_correct))
-    fig, ax = plt.subplots(figsize=(12, 6))
-
-    mask_c = ~np.isnan(mean_correct)
-    mask_i = ~np.isnan(mean_incorrect)
-    if np.any(mask_c):
-        ax.plot(
-            j[mask_c],
-            mean_correct[mask_c],
-            color="tab:green",
-            linewidth=2,
-            label="Val — mean −log p (correct)",
-        )
-    if np.any(mask_i):
-        ax.plot(
-            j[mask_i],
-            mean_incorrect[mask_i],
-            color="tab:orange",
-            linewidth=2,
-            label="Val — mean −log p (incorrect)",
-        )
-
-    ax.set_xlabel("Step index (non-overlapping chunk)")
-    ax.set_ylabel("Mean negative log probability (thinking tokens)")
-    title = (
-        f"Validation: mean −log p vs step | chunk_size={chunk_size}\n"
-        "(only validation split; per-step mean over examples that reach that step)"
-    )
-    if title_suffix:
-        title = f"{title_suffix}\n{title}"
-    ax.set_title(title)
-    ax.legend(loc="best", fontsize=9)
-    ax.grid(True, alpha=0.3)
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-
-
-def plot_val_variance_neg_logprob_vs_step(
-    var_correct: np.ndarray,
-    var_incorrect: np.ndarray,
-    chunk_size: int,
-    out_path: str,
-    title_suffix: str | None = None,
-) -> None:
-    import matplotlib.pyplot as plt
-
-    j = np.arange(len(var_correct))
-    fig, ax = plt.subplots(figsize=(12, 6))
-
-    mask_c = ~np.isnan(var_correct)
-    mask_i = ~np.isnan(var_incorrect)
-    if np.any(mask_c):
-        ax.plot(
-            j[mask_c],
-            var_correct[mask_c],
-            color="tab:green",
-            linewidth=2,
-            label="Val — Var(−log p) (correct)",
-        )
-    if np.any(mask_i):
-        ax.plot(
-            j[mask_i],
-            var_incorrect[mask_i],
-            color="tab:orange",
-            linewidth=2,
-            label="Val — Var(−log p) (incorrect)",
-        )
-
-    ax.set_xlabel("Step index (non-overlapping chunk)")
-    ax.set_ylabel("Variance of per-response step mean −log p")
-    title = (
-        f"Validation: variance of step mean −log p vs step | chunk_size={chunk_size}\n"
-        "(population variance across validation examples at each step)"
-    )
-    if title_suffix:
-        title = f"{title_suffix}\n{title}"
-    ax.set_title(title)
-    ax.legend(loc="best", fontsize=9)
-    ax.grid(True, alpha=0.3)
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-
-
-def plot_val_support_counts_vs_step(
-    n_correct: np.ndarray,
-    n_incorrect: np.ndarray,
-    chunk_size: int,
-    out_path: str,
-    title_suffix: str | None = None,
-) -> None:
-    """Plot how many correct vs incorrect validation responses include each step index."""
-    import matplotlib.pyplot as plt
-
-    j = np.arange(len(n_correct))
-    fig, ax = plt.subplots(figsize=(12, 6))
-
-    ax.plot(j, n_correct, color="tab:green", linewidth=2, label="# val responses (correct)")
-    ax.plot(j, n_incorrect, color="tab:orange", linewidth=2, label="# val responses (incorrect)")
-    ax.set_xlabel("Step index (non-overlapping chunk)")
-    ax.set_ylabel("Number of responses reaching this step")
-    title = (
-        f"Validation: support count vs step | chunk_size={chunk_size}\n"
-        "(how many correct / incorrect examples have at least this many steps)"
-    )
-    if title_suffix:
-        title = f"{title_suffix}\n{title}"
-    ax.set_title(title)
-    ax.legend(loc="best", fontsize=9)
-    ax.grid(True, alpha=0.3)
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=150, bbox_inches="tight")
-    plt.close(fig)
 
 
 def plot_val_neg_logprob_combined(
@@ -346,10 +220,22 @@ def main() -> None:
         description="Plot validation mean negative log probability vs step (correct vs incorrect)"
     )
     p.add_argument(
-        "--results_dir",
+        "--outputs_dir",
+        type=str,
+        default="outputs",
+        help="Root containing <dataset>/<model>/result_*.json (default: outputs)",
+    )
+    p.add_argument(
+        "--dataset",
         type=str,
         required=True,
-        help="Directory with result_0.json, ... (needs token_logprobs or logprobs in response.logprobs)",
+        help="Dataset folder name (e.g. gpqa)",
+    )
+    p.add_argument(
+        "--model",
+        type=str,
+        required=True,
+        help="Model folder name under the dataset directory",
     )
     p.add_argument(
         "--val_size",
@@ -365,38 +251,16 @@ def main() -> None:
         help="Tokens per step (non-overlapping chunk mean), same idea as abstention",
     )
     p.add_argument(
-        "--output_path",
-        type=str,
-        default="val_neg_logprob_vs_step.png",
-        help="Output PNG path for the combined 3-panel figure (default)",
-    )
-    p.add_argument(
-        "--separate_plots",
-        action="store_true",
-        help="Also save three standalone PNGs (mean / variance / counts) next to output stem",
-    )
-    p.add_argument(
-        "--variance_output_path",
-        type=str,
-        default=None,
-        help="With --separate_plots: variance PNG path (default: <output_stem>_variance.png)",
-    )
-    p.add_argument(
-        "--counts_output_path",
-        type=str,
-        default=None,
-        help="With --separate_plots: counts PNG path (default: <output_stem>_counts.png)",
-    )
-    p.add_argument(
         "--title",
         type=str,
         default=None,
-        help="Optional extra title line (e.g. model name)",
+        help="Optional extra title line (default: use --model)",
     )
     args = p.parse_args()
 
-    data = load_results_flat_dir(args.results_dir)
-    print(f"Loaded {len(data)} files from {args.results_dir}")
+    results_dir = os.path.join(args.outputs_dir, args.dataset, args.model)
+    data = load_results_flat_dir(results_dir)
+    print(f"Loaded {len(data)} files from {results_dir}")
 
     val_data, _test_discard = stratified_val_test_split(data, args.val_size, args.seed)
     print(f"Using validation only: N_val={len(val_data)} (test split discarded for this plot)")
@@ -415,19 +279,11 @@ def main() -> None:
         val_step_mean_var_count_from_step_lists(correct_steps, incorrect_steps)
     )
 
-    out_base = Path(args.output_path)
-    var_path = (
-        Path(args.variance_output_path)
-        if args.variance_output_path
-        else out_base.parent / f"{out_base.stem}_variance{out_base.suffix}"
-    )
-    cnt_path = (
-        Path(args.counts_output_path)
-        if args.counts_output_path
-        else out_base.parent / f"{out_base.stem}_counts{out_base.suffix}"
-    )
-
-    Path(args.output_path).parent.mkdir(parents=True, exist_ok=True)
+    out_dir = Path(VALIDATION_PLOT_ROOT) / args.dataset
+    out_dir.mkdir(parents=True, exist_ok=True)
+    safe_model = _sanitize_filename_component(args.model)
+    output_path = str(out_dir / f"{safe_model}_val_step_neg_logprob.png")
+    title_suffix = args.title if args.title is not None else args.model
 
     plot_val_neg_logprob_combined(
         mean_corr,
@@ -437,36 +293,10 @@ def main() -> None:
         n_corr,
         n_inc,
         args.chunk_size,
-        args.output_path,
-        title_suffix=args.title,
+        output_path,
+        title_suffix=title_suffix,
     )
-    print(f"Saved combined plot (3 panels, shared x-axis): {args.output_path}")
-
-    if args.separate_plots:
-        out_base = Path(args.output_path)
-        mean_only = out_base.parent / f"{out_base.stem}_mean_only{out_base.suffix}"
-        plot_val_mean_neg_logprob_vs_step(
-            mean_corr,
-            mean_inc,
-            args.chunk_size,
-            str(mean_only),
-            title_suffix=args.title,
-        )
-        plot_val_variance_neg_logprob_vs_step(
-            var_corr,
-            var_inc,
-            args.chunk_size,
-            str(var_path),
-            title_suffix=args.title,
-        )
-        plot_val_support_counts_vs_step(
-            n_corr,
-            n_inc,
-            args.chunk_size,
-            str(cnt_path),
-            title_suffix=args.title,
-        )
-        print(f"Also saved separate: {mean_only}, {var_path}, {cnt_path}")
+    print(f"Saved combined plot (3 panels, shared x-axis): {output_path}")
 
 
 if __name__ == "__main__":

@@ -33,6 +33,10 @@ _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
+from abstain_batch_utils import (  # noqa: E402
+    METHOD_STEP_ENTROPY,
+    discover_models_in_dataset,
+)
 from abstain_step_entropy import (  # noqa: E402
     abstention_f1,
     build_active_and_tau_with_min_support,
@@ -109,7 +113,7 @@ def run_grid(
     val_data: list[dict],
     save_csv: str | None,
     min_support_per_class: int,
-) -> dict:
+) -> tuple[dict, list]:
     chunk_sizes = list(range(50, 601, 50))
     deltas = [round(0.02 + 0.01 * i, 2) for i in range(7)]  # 0.02..0.08
     noises = [round(0.01 + 0.01 * i, 2) for i in range(10)]  # 0.01..0.10
@@ -471,51 +475,38 @@ def _sanitize_filename_component(name: str) -> str:
     return safe.strip() or "model"
 
 
-def discover_model_result_dirs(gpqa_root: str) -> list[tuple[str, str]]:
-    """
-    Return list of (model_name, results_dir_path) for each immediate subdirectory
-    of gpqa_root that contains at least one result_*.json.
-    """
-    root = Path(gpqa_root)
-    out: list[tuple[str, str]] = []
-    if not root.is_dir():
-        raise FileNotFoundError(f"Not a directory: {gpqa_root}")
-    for p in sorted(root.iterdir()):
-        if not p.is_dir():
-            continue
-        pattern = str(p / "result_*.json")
-        if glob.glob(pattern):
-            out.append((p.name, str(p.resolve())))
-    return out
-
-
-def run_gpqa_models(
-    gpqa_root: str,
-    image_dir: str,
-    gpqa_results_dir: str,
+def run_dataset_batch(
+    dataset_dir: str,
+    model_names: list[str],
+    abstaining_results_dir: str,
+    abstaining_plots_dir: str,
     val_size: int,
     seed: int,
     min_support_per_class: int,
 ) -> None:
     """
-    Run full abstention pipeline per model subfolder; save plots, summary CSV, and combined grid.
-
-    Writes under ``gpqa_results_dir``:
-      - ``avg_entropy.csv`` — one row per model (same columns as before).
-      - ``grid.csv`` — all validation grid rows for all models, with leading ``model_name`` column.
+    ``dataset_dir`` is ``<outputs_root>/<dataset_name>/``. Writes ``avg_entropy.csv`` and
+    ``grid.csv`` under ``abstaining_results_dir/<dataset>/step_entropy/``, plots under
+    ``abstaining_plots_dir/<dataset>/step_entropy/``.
     """
-    model_dirs = discover_model_result_dirs(gpqa_root)
+    dataset_path = Path(dataset_dir)
+    dataset_name = dataset_path.name
+    model_dirs = discover_models_in_dataset(dataset_dir, model_names)
     if not model_dirs:
-        print(f"No subfolders with result_*.json under {gpqa_root}")
+        print(f"No usable model directories under {dataset_dir}")
         return
 
-    Path(image_dir).mkdir(parents=True, exist_ok=True)
+    plots_dir = Path(abstaining_plots_dir) / dataset_name / METHOD_STEP_ENTROPY
+    results_dir = Path(abstaining_results_dir) / dataset_name / METHOD_STEP_ENTROPY
+    plots_dir.mkdir(parents=True, exist_ok=True)
+    results_dir.mkdir(parents=True, exist_ok=True)
+
     summary_rows: list[dict[str, str | int | float]] = []
     combined_grid: list[dict[str, str | int | float]] = []
 
-    for model_name, results_dir in model_dirs:
-        print(f"\n{'='*60}\nModel: {model_name}\n{results_dir}\n{'='*60}")
-        data = load_results_flat_dir(results_dir)
+    for model_name, res_dir in model_dirs:
+        print(f"\n{'='*60}\nModel: {model_name}\n{res_dir}\n{'='*60}")
+        data = load_results_flat_dir(res_dir)
         n = len(data)
         if n <= val_size:
             print(
@@ -540,7 +531,7 @@ def run_gpqa_models(
             print(f"  {k}: {v}")
 
         safe = _sanitize_filename_component(model_name)
-        plot_path = os.path.join(image_dir, f"{safe}_val_step_entropy.png")
+        plot_path = os.path.join(plots_dir, f"{safe}_val_step_entropy.png")
 
         m = print_test_report(
             val_data,
@@ -555,10 +546,7 @@ def run_gpqa_models(
         print("No models produced results; result CSVs not written.")
         return
 
-    out_dir = Path(gpqa_results_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    summary_path = out_dir / "avg_entropy.csv"
+    summary_path = results_dir / "avg_entropy.csv"
     with open(summary_path, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=SUMMARY_CSV_COLUMNS, extrasaction="ignore")
         w.writeheader()
@@ -567,7 +555,7 @@ def run_gpqa_models(
     print(f"\nWrote summary CSV ({len(summary_rows)} models): {summary_path}")
 
     if combined_grid:
-        grid_path = out_dir / "grid.csv"
+        grid_path = results_dir / "grid.csv"
         grid_fields = ["model_name"] + [
             k for k in combined_grid[0].keys() if k != "model_name"
         ]
@@ -582,7 +570,7 @@ def run_gpqa_models(
 
 def main() -> None:
     p = argparse.ArgumentParser(
-        description="Step-entropy abstention grid search + test eval (single dir or GPQA multi-model)"
+        description="Step-entropy abstention grid search + test eval (single dir or batch over outputs layout)"
     )
     p.add_argument(
         "--results_dir",
@@ -591,25 +579,34 @@ def main() -> None:
         help="Directory containing result_0.json, ... (single-model mode)",
     )
     p.add_argument(
-        "--gpqa_root",
+        "--outputs_dir",
         type=str,
         default=None,
-        help="Parent directory whose subfolders each hold result_*.json for one model (batch mode)",
+        help="Root with subdirs outputs/<dataset>/<model>/ (batch mode; use with --dataset)",
     )
     p.add_argument(
-        "--image_dir",
+        "--dataset",
         type=str,
         default=None,
-        help="Directory to save per-model validation plots (required with --gpqa_root)",
+        help="Dataset folder name under --outputs_dir (batch mode)",
     )
     p.add_argument(
-        "--gpqa_results_dir",
+        "--models",
+        nargs="*",
+        default=None,
+        help="Model folder names to include (batch mode). If omitted, all models under the dataset are used.",
+    )
+    p.add_argument(
+        "--abstaining_results_dir",
         type=str,
-        default="abstaining_results/gpqa",
-        help=(
-            "With --gpqa_root: directory for avg_entropy.csv (per-model summary) and "
-            "grid.csv (all models' validation grids combined). Default: abstaining_results/gpqa"
-        ),
+        default="abstaining_results",
+        help="Root for abstaining_results/<dataset>/step_entropy/avg_entropy.csv and grid.csv (batch mode)",
+    )
+    p.add_argument(
+        "--abstaining_plots_dir",
+        type=str,
+        default="abstaining_plots",
+        help="Root for abstaining_plots/<dataset>/step_entropy/*.png (batch mode)",
     )
     p.add_argument("--val_size", type=int, default=60, help="Validation set size (rest is test)")
     p.add_argument("--seed", type=int, default=42)
@@ -633,13 +630,14 @@ def main() -> None:
     )
     args = p.parse_args()
 
-    if args.gpqa_root:
-        if not args.image_dir:
-            p.error("--gpqa_root requires --image_dir")
-        run_gpqa_models(
-            args.gpqa_root,
-            args.image_dir,
-            args.gpqa_results_dir,
+    if args.outputs_dir is not None:
+        if not args.dataset:
+            p.error("--outputs_dir requires --dataset")
+        run_dataset_batch(
+            os.path.join(args.outputs_dir, args.dataset),
+            list(args.models or []),
+            args.abstaining_results_dir,
+            args.abstaining_plots_dir,
             args.val_size,
             args.seed,
             args.min_support_per_class,
@@ -647,7 +645,7 @@ def main() -> None:
         return
 
     if not args.results_dir:
-        p.error("Provide --results_dir (single model) or --gpqa_root (batch)")
+        p.error("Provide --results_dir (single model) or --outputs_dir and --dataset (batch)")
 
     data = load_results_flat_dir(args.results_dir)
     print(f"Loaded {len(data)} result files from {args.results_dir}")

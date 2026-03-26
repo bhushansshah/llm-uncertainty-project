@@ -6,3 +6,4 @@ outputs
 .venv
 confidence_results_march
 .env
+api_keys.json
