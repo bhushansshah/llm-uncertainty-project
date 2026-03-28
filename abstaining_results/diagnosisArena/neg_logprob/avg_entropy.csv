@@ -1,0 +1,8 @@
+Model Name,Type of Parameters,Baseline Accuracy (test dataset),Number of Correct Responses (test dataset),Number of Incorrect Responses (test dataset),F1 Validation Score,Precision on validation,Recall on validation,test accuracy,among abstained incorrect (test dataset),Among abstained correct (test dataset),Mean token saved per abstain response (test dataset)
+deepseek-ai_DeepSeek-V3.1,"chunk_size=50, delta=0.02, noise=0.01, ground_threshold=1, min_support_per_class=3",0.656814,400,209,0.0,0.0,0.0,0.656814,0,0,0.0
+Qwen_Qwen3-32B,"chunk_size=50, delta=0.02, noise=0.01, ground_threshold=1, min_support_per_class=3",0.519672,317,293,0.64631,0.51626,0.863946,0.114754,247,247,1040.1154
+openai_gpt-oss-120b,"chunk_size=250, delta=0.02, noise=0.01, ground_threshold=1, min_support_per_class=3",0.596721,364,246,0.547368,0.481481,0.634146,0.303279,172,179,559.9601
+Qwen_Qwen2.5-32B,"chunk_size=50, delta=0.02, noise=0.01, ground_threshold=1, min_support_per_class=3",0.454098,277,333,0.280193,0.725,0.173653,0.365574,59,54,665.3274
+Qwen_Qwen3-235B-A22B-Thinking-2507,"chunk_size=50, delta=0.02, noise=0.03, ground_threshold=1, min_support_per_class=3",0.57377,350,260,0.59364,0.54902,0.646154,0.267213,161,187,6082.1034
+RedHatAI_DeepSeek-R1-Distill-Llama-70B-FP8-dynamic,"chunk_size=50, delta=0.02, noise=0.01, ground_threshold=1, min_support_per_class=3",0.483607,295,315,0.636364,0.606936,0.66879,0.239344,196,149,1759.7594
+RedHatAI_Meta-Llama-3.1-70B-Instruct-FP8,"chunk_size=50, delta=0.02, noise=0.01, ground_threshold=1, min_support_per_class=3",0.516393,315,295,0.451852,0.5,0.412162,0.322951,135,118,134.6798

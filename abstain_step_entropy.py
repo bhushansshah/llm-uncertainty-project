@@ -348,6 +348,59 @@ def should_abstain(
     return count_exceeding_threshold(step_means, active, tau, noise) >= ground_threshold
 
 
+def example_usable_for_entropy_abstention(d: dict[str, Any]) -> bool:
+    """
+    True if ``response.logprobs`` has aligned ``tokens`` and ``top_logprobs`` lists
+    (required for ``token_entropies_thinking_only`` / step-entropy and agg pipelines).
+    """
+    lp = d.get("response", {}).get("logprobs")
+    if not isinstance(lp, dict):
+        return False
+    t = lp.get("tokens")
+    tpl = lp.get("top_logprobs")
+    if t is None or tpl is None:
+        return False
+    if not isinstance(t, list) or not isinstance(tpl, list):
+        return False
+    return len(t) == len(tpl)
+
+
+def example_usable_for_neg_logprob_abstention(d: dict[str, Any]) -> bool:
+    """
+    Stricter than entropy: also need per-token log probs (``token_logprobs`` or ``logprobs``)
+    aligned with ``tokens`` for ``token_neg_log_probs_thinking_only``.
+    """
+    if not example_usable_for_entropy_abstention(d):
+        return False
+    lp = d["response"]["logprobs"]
+    try:
+        tlp = get_per_token_logprob_list(lp)
+    except (ValueError, TypeError, KeyError):
+        return False
+    return len(tlp) == len(lp["tokens"])
+
+
+def filter_usable_examples_entropy(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    Drop examples that cannot run entropy-based abstention (missing/invalid logprob tokens).
+
+    Call this **before** ``stratified_val_test_split``. The split then applies to the **usable
+    pool only**: validation has exactly ``val_size`` rows (when ``len(data) > val_size`` after
+    filtering), and test has ``len(data) - val_size`` rows. Hyperparameters (τ, active steps)
+    are fit on validation; test evaluation uses only usable examples — same methodology as when
+    every row was usable, with a smaller effective dataset.
+    """
+    return [d for d in data if example_usable_for_entropy_abstention(d)]
+
+
+def filter_usable_examples_neg_logprob(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    Drop examples that cannot run −log p abstention. Same **before-split** semantics as
+    ``filter_usable_examples_entropy`` (see that docstring).
+    """
+    return [d for d in data if example_usable_for_neg_logprob_abstention(d)]
+
+
 def abstention_f1(
     abstain_flags: list[bool],
     is_correct: list[bool],
@@ -383,4 +436,10 @@ def abstention_f1(
 
 def total_tokens_in_response(d: dict[str, Any]) -> int:
     """Full response length (all tokens in logprobs)."""
-    return len(d["response"]["logprobs"]["tokens"])
+    lp = d.get("response", {}).get("logprobs")
+    if not isinstance(lp, dict):
+        return 0
+    t = lp.get("tokens")
+    if not isinstance(t, list):
+        return 0
+    return len(t)

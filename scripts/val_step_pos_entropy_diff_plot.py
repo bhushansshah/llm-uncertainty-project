@@ -37,7 +37,7 @@ from abstain_step_entropy import (  # noqa: E402
 )
 from sklearn.model_selection import train_test_split  # noqa: E402
 
-VALIDATION_PLOT_ROOT = "abstaining_validation_plot"
+VALIDATION_PLOT_ROOT = "abstaining_validation_plots"
 
 
 def _sanitize_filename_component(name: str) -> str:

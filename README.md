@@ -85,6 +85,8 @@ Each baseline is saved as a separate CSV in `--results_dir` (e.g., `results/verb
 
 **Inputs:** JSON files named `result_<idx>.json` with `is_correct` and logprob fields as required by [`abstain_step_entropy.py`](abstain_step_entropy.py) (entropy methods need `response.logprobs` with `tokens` / `top_logprobs`; −log p needs `token_logprobs` or `logprobs`). Thinking-token boundaries follow the same rules as in that module.
 
+**Rows with missing/invalid logprob structure** (e.g. `tokens` is `null`) are **dropped before** the train/validation split. `--val_size` is then the validation set size on this **usable pool only**; the test set has `usable_total − val_size` examples. Grid search, τ, and active-step logic are unchanged; they apply only to examples that can be scored.
+
 **Output layout** (batch mode — recommended):
 
 - `abstaining_results/<dataset>/<method>/avg_entropy.csv` — one row per model (all three methods)  

@@ -45,6 +45,7 @@ from abstain_step_entropy import (  # noqa: E402
     build_active_and_tau_with_min_support,
     chunk_step_means,
     cumulative_sum_chunk_means,
+    filter_usable_examples_entropy,
     should_abstain,
     token_entropies_thinking_only,
     total_tokens_in_response,
@@ -504,14 +505,25 @@ def run_dataset_batch(
     for model_name, res_dir in model_dirs:
         print(f"\n{'='*60}\nModel: {model_name}\n{res_dir}\n{'='*60}")
         data = load_results_flat_dir(res_dir)
+        n_raw = len(data)
+        data = filter_usable_examples_entropy(data)
+        if len(data) != n_raw:
+            print(
+                f"Dropped {n_raw - len(data)} examples without usable tokens/top_logprobs; "
+                f"{len(data)} remain."
+            )
         n = len(data)
         if n <= val_size:
             print(
                 f"SKIP: need more than val_size={val_size} examples, got {n}"
             )
             continue
+        n_usable = len(data)
         val_data, test_data = stratified_val_test_split(data, val_size, seed)
-        print(f"Validation: {len(val_data)}, Test: {len(test_data)}")
+        print(
+            f"Stratified split on {n_usable} usable examples: "
+            f"validation={len(val_data)}, test={len(test_data)} (val_size={val_size})"
+        )
 
         best = run_grid(
             val_data, save_csv=None, min_support_per_class=min_support_per_class
@@ -635,9 +647,20 @@ def main() -> None:
 
     data = load_results_flat_dir(args.results_dir)
     print(f"Loaded {len(data)} result files from {args.results_dir}")
+    n_raw = len(data)
+    data = filter_usable_examples_entropy(data)
+    if len(data) != n_raw:
+        print(
+            f"Dropped {n_raw - len(data)} examples without usable tokens/top_logprobs; "
+            f"{len(data)} remain."
+        )
 
+    n_usable = len(data)
     val_data, test_data = stratified_val_test_split(data, args.val_size, args.seed)
-    print(f"Validation: {len(val_data)}, Test: {len(test_data)}")
+    print(
+        f"Stratified split on {n_usable} usable examples: "
+        f"validation={len(val_data)}, test={len(test_data)} (val_size={args.val_size})"
+    )
 
     print(
         "Grid: chunk_size 50..700 step 50; delta 0.1..10 step 0.3; "
