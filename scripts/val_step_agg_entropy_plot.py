@@ -13,8 +13,6 @@ Reads ``<outputs_dir>/<dataset>/<model>/result_*.json`` and writes one combined 
 from __future__ import annotations
 
 import argparse
-import glob
-import json
 import os
 import sys
 from pathlib import Path
@@ -25,91 +23,19 @@ _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
+from abstain_experiment_common import (  # noqa: E402
+    load_results_flat_dir,
+    sanitize_filename_component,
+    stratified_val_test_split_fixed_size as stratified_val_test_split,
+)
 from abstain_step_entropy import (  # noqa: E402
     chunk_step_means,
     cumulative_sum_chunk_means,
     token_entropies_thinking_only,
+    val_step_mean_var_count_from_step_lists,
 )
-from sklearn.model_selection import train_test_split  # noqa: E402
 
-VALIDATION_PLOT_ROOT = "abstaining_validation_plot"
-
-
-def _sanitize_filename_component(name: str) -> str:
-    safe = "".join(c if c not in r'\/:*?"<>|' else "_" for c in name)
-    return safe.strip() or "model"
-
-
-def load_results_flat_dir(results_dir: str) -> list[dict]:
-    pattern = os.path.join(results_dir, "result_*.json")
-    files = sorted(
-        glob.glob(pattern),
-        key=lambda f: int(os.path.basename(f).split("_")[1].split(".")[0]),
-    )
-    out = []
-    for fp in files:
-        with open(fp, encoding="utf-8") as f:
-            out.append(json.load(f))
-    return out
-
-
-def stratified_val_test_split(
-    data: list[dict],
-    val_size: int,
-    seed: int,
-) -> tuple[list[dict], list[dict]]:
-    n = len(data)
-    if n <= val_size:
-        raise ValueError(f"Need more than val_size={val_size} examples, got {n}")
-    labels = [1 if d.get("is_correct") else 0 for d in data]
-    idx = np.arange(n)
-
-    use_stratify = len(set(labels)) >= 2 and val_size >= 2 and (n - val_size) >= 2
-    if use_stratify:
-        try:
-            val_ix, test_ix = train_test_split(
-                idx,
-                train_size=val_size,
-                random_state=seed,
-                stratify=labels,
-            )
-            return [data[i] for i in val_ix], [data[i] for i in test_ix]
-        except ValueError:
-            pass
-
-    rng = np.random.default_rng(seed)
-    rng.shuffle(idx)
-    return [data[i] for i in idx[:val_size]], [data[i] for i in idx[val_size:]]
-
-
-def val_step_mean_var_count_from_step_lists(
-    correct_steps: list[list[float]],
-    incorrect_steps: list[list[float]],
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    max_len = 0
-    for s in correct_steps + incorrect_steps:
-        max_len = max(max_len, len(s))
-
-    mean_corr = np.full(max_len, np.nan, dtype=float)
-    mean_inc = np.full(max_len, np.nan, dtype=float)
-    var_corr = np.full(max_len, np.nan, dtype=float)
-    var_inc = np.full(max_len, np.nan, dtype=float)
-    n_corr = np.zeros(max_len, dtype=int)
-    n_inc = np.zeros(max_len, dtype=int)
-
-    for j in range(max_len):
-        cvals = [s[j] for s in correct_steps if j < len(s)]
-        ivals = [s[j] for s in incorrect_steps if j < len(s)]
-        n_corr[j] = len(cvals)
-        n_inc[j] = len(ivals)
-        if cvals:
-            mean_corr[j] = float(np.mean(cvals))
-            var_corr[j] = float(np.var(cvals, ddof=0))
-        if ivals:
-            mean_inc[j] = float(np.mean(ivals))
-            var_inc[j] = float(np.var(ivals, ddof=0))
-
-    return mean_corr, mean_inc, var_corr, var_inc, n_corr, n_inc
+VALIDATION_PLOT_ROOT = "abstaining_validation_plots"
 
 
 def plot_val_agg_entropy_combined(
@@ -270,7 +196,7 @@ def main() -> None:
 
     out_dir = Path(VALIDATION_PLOT_ROOT) / args.dataset
     out_dir.mkdir(parents=True, exist_ok=True)
-    safe_model = _sanitize_filename_component(args.model)
+    safe_model = sanitize_filename_component(args.model)
     output_path = str(out_dir / f"{safe_model}_val_step_agg_entropy.png")
     title_suffix = args.title if args.title is not None else args.model
 

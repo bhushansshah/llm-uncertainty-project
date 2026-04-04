@@ -8,3 +8,9 @@ confidence_results_march
 .env
 api_keys.json
 rough_work.txt
+tmp.json
+abstaining_results/gpqa/step_entropy/grid.csv
+abstaining_results/gpqa/neg_logprob/grid.csv
+abstaining_results/gpqa/agg_entropy/grid.csv
+
+abstaining_results/gpqa/step_kl/grid.csv

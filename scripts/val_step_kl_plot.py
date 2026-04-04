@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """
-Plot **per-step mean chunk entropy** (simple step entropy) on the **validation** split only.
+Plot **per-step mean chunk KL(U‖p)** on the **validation** split only.
 
-For each response, step ``j`` is the **mean token entropy within chunk ``j``** (non-overlapping
-chunks of ``chunk_size`` thinking-only tokens). Same signal as ``abstain_step_entropy_experiment.py``
-and ``chunk_step_means`` in ``abstain_step_entropy.py`` — **not** cumulative (see
-``val_step_agg_entropy_plot.py`` for cumulative sums).
+For each response, step ``j`` is the **mean token-level KL to uniform** within chunk
+``j`` (non-overlapping chunks of ``chunk_size`` thinking-only tokens), using the same top‑k +
+uniform-tail completion as ``abstain_kl.py`` / ``abstain_step_kl_experiment.py``.
 
 Reads ``<outputs_dir>/<dataset>/<model>/result_*.json`` and writes one combined figure to
-``abstaining_validation_plot/<dataset>/<model_safe>_val_step_entropy.png``.
+``abstaining_validation_plot/<dataset>/<model_safe>_val_step_kl.png``.
 """
 
 from __future__ import annotations
@@ -29,16 +28,19 @@ from abstain_experiment_common import (  # noqa: E402
     sanitize_filename_component,
     stratified_val_test_split_fixed_size as stratified_val_test_split,
 )
+from abstain_kl import (  # noqa: E402
+    filter_usable_examples_kl,
+    token_kls_thinking_only,
+)
 from abstain_step_entropy import (  # noqa: E402
     chunk_step_means,
-    token_entropies_thinking_only,
     val_step_mean_var_count_from_step_lists,
 )
 
 VALIDATION_PLOT_ROOT = "abstaining_validation_plot"
 
 
-def plot_val_step_entropy_combined(
+def plot_val_step_kl_combined(
     mean_correct: np.ndarray,
     mean_incorrect: np.ndarray,
     var_correct: np.ndarray,
@@ -69,7 +71,7 @@ def plot_val_step_entropy_combined(
             mean_correct[mask_c],
             color="tab:green",
             linewidth=2,
-            label="Mean chunk entropy (correct)",
+            label="Mean chunk KL(U‖p) (correct)",
         )
     if np.any(mask_i):
         ax0.plot(
@@ -77,11 +79,11 @@ def plot_val_step_entropy_combined(
             mean_incorrect[mask_i],
             color="tab:orange",
             linewidth=2,
-            label="Mean chunk entropy (incorrect)",
+            label="Mean chunk KL(U‖p) (incorrect)",
         )
-    ax0.set_ylabel("Mean H per chunk\n(within chunk, thinking tokens)")
+    ax0.set_ylabel("Mean KL(U‖p) per chunk\n(within chunk, thinking tokens)")
     ax0.set_title(
-        "(1) Mean chunk entropy vs step — validation; per-step mean over responses that reach that step"
+        "(1) Mean chunk KL(U‖p) vs step — validation; per-step mean over responses that reach that step"
     )
     ax0.legend(loc="best", fontsize=8)
     ax0.grid(True, alpha=0.3)
@@ -94,7 +96,7 @@ def plot_val_step_entropy_combined(
             var_correct[mask_vc],
             color="tab:green",
             linewidth=2,
-            label="Var(chunk mean H) (correct)",
+            label="Var(chunk mean KL) (correct)",
         )
     if np.any(mask_vi):
         ax1.plot(
@@ -102,9 +104,9 @@ def plot_val_step_entropy_combined(
             var_incorrect[mask_vi],
             color="tab:orange",
             linewidth=2,
-            label="Var(chunk mean H) (incorrect)",
+            label="Var(chunk mean KL) (incorrect)",
         )
-    ax1.set_ylabel("Variance of chunk mean entropy")
+    ax1.set_ylabel("Variance of chunk mean KL(U‖p)")
     ax1.set_title("(2) Population variance across validation examples at each step")
     ax1.legend(loc="best", fontsize=8)
     ax1.grid(True, alpha=0.3)
@@ -120,7 +122,9 @@ def plot_val_step_entropy_combined(
     if len(j) > 0:
         ax2.set_xlim(j[0] - 0.5, j[-1] + 0.5)
 
-    supt = f"Validation — per-chunk mean entropy (step entropy) | chunk_size={chunk_size} tokens/chunk"
+    supt = (
+        f"Validation — per-chunk mean KL(U‖p) (step KL) | chunk_size={chunk_size} tokens/chunk"
+    )
     if title_suffix:
         supt = f"{title_suffix}\n{supt}"
     fig.suptitle(supt, fontsize=12, y=1.02)
@@ -131,7 +135,7 @@ def plot_val_step_entropy_combined(
 
 def main() -> None:
     p = argparse.ArgumentParser(
-        description="Plot validation per-chunk mean entropy vs step (correct vs incorrect)"
+        description="Plot validation per-chunk mean KL(U‖p) vs step (correct vs incorrect)"
     )
     p.add_argument(
         "--outputs_dir",
@@ -150,6 +154,12 @@ def main() -> None:
         type=str,
         required=True,
         help="Model folder name under the dataset directory",
+    )
+    p.add_argument(
+        "--vocab_size",
+        type=int,
+        required=True,
+        help="Full vocabulary size V (same as step_kl abstention; see README / vocab_map)",
     )
     p.add_argument(
         "--val_size",
@@ -176,14 +186,28 @@ def main() -> None:
     data = load_results_flat_dir(results_dir)
     print(f"Loaded {len(data)} files from {results_dir}")
 
+    n_raw = len(data)
+    data = filter_usable_examples_kl(data)
+    if len(data) != n_raw:
+        print(
+            f"Dropped {n_raw - len(data)} examples without aligned tokens/top_logprobs; "
+            f"{len(data)} remain."
+        )
+    if len(data) <= args.val_size:
+        raise SystemExit(
+            f"Need more than val_size={args.val_size} usable examples after filtering, "
+            f"got {len(data)}"
+        )
+
     val_data, _test_discard = stratified_val_test_split(data, args.val_size, args.seed)
     print(f"Using validation only: N_val={len(val_data)} (test split discarded for this plot)")
 
+    vocab_size = int(args.vocab_size)
     correct_steps: list[list[float]] = []
     incorrect_steps: list[list[float]] = []
     for d in val_data:
-        ent = token_entropies_thinking_only(d)
-        steps = chunk_step_means(ent, args.chunk_size)
+        kl_seq = token_kls_thinking_only(d, vocab_size)
+        steps = chunk_step_means(kl_seq, args.chunk_size)
         if d.get("is_correct"):
             correct_steps.append(steps)
         else:
@@ -196,10 +220,10 @@ def main() -> None:
     out_dir = Path(VALIDATION_PLOT_ROOT) / args.dataset
     out_dir.mkdir(parents=True, exist_ok=True)
     safe_model = sanitize_filename_component(args.model)
-    output_path = str(out_dir / f"{safe_model}_val_step_entropy.png")
+    output_path = str(out_dir / f"{safe_model}_val_step_kl.png")
     title_suffix = args.title if args.title is not None else args.model
 
-    plot_val_step_entropy_combined(
+    plot_val_step_kl_combined(
         mean_corr,
         mean_inc,
         var_corr,

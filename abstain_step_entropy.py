@@ -250,6 +250,40 @@ def val_step_means_and_counts_from_step_lists(
     return mean_corr, mean_inc, n_corr, n_inc
 
 
+def val_step_mean_var_count_from_step_lists(
+    correct_steps: list[list[float]],
+    incorrect_steps: list[list[float]],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Per step index: mean and population variance (ddof=0) of correct vs incorrect step values,
+    plus per-step counts. Used by ``scripts/val_step_*_plot.py`` validation curves.
+    """
+    max_len = 0
+    for s in correct_steps + incorrect_steps:
+        max_len = max(max_len, len(s))
+
+    mean_corr = np.full(max_len, np.nan, dtype=float)
+    mean_inc = np.full(max_len, np.nan, dtype=float)
+    var_corr = np.full(max_len, np.nan, dtype=float)
+    var_inc = np.full(max_len, np.nan, dtype=float)
+    n_corr = np.zeros(max_len, dtype=int)
+    n_inc = np.zeros(max_len, dtype=int)
+
+    for j in range(max_len):
+        cvals = [s[j] for s in correct_steps if j < len(s)]
+        ivals = [s[j] for s in incorrect_steps if j < len(s)]
+        n_corr[j] = len(cvals)
+        n_inc[j] = len(ivals)
+        if cvals:
+            mean_corr[j] = float(np.mean(cvals))
+            var_corr[j] = float(np.var(cvals, ddof=0))
+        if ivals:
+            mean_inc[j] = float(np.mean(ivals))
+            var_inc[j] = float(np.var(ivals, ddof=0))
+
+    return mean_corr, mean_inc, var_corr, var_inc, n_corr, n_inc
+
+
 def val_step_mean_entropies_from_step_lists(
     correct_steps: list[list[float]],
     incorrect_steps: list[list[float]],
@@ -348,6 +382,37 @@ def should_abstain(
     return count_exceeding_threshold(step_means, active, tau, noise) >= ground_threshold
 
 
+def first_step_index_abstention_prefix(
+    step_means: list[float],
+    active: np.ndarray,
+    tau: np.ndarray,
+    noise: float,
+    ground_threshold: int,
+) -> int | None:
+    """
+    Smallest step index ``j`` such that, scanning ``k = 0, 1, ..., j`` in order, at least
+    ``ground_threshold`` **active** steps satisfy ``step_means[k] > tau[k] + noise``.
+
+    This is the chunk index at which the running count of exceedances first reaches
+    ``ground_threshold`` (the ``ground_threshold``-th qualifying step in reading order). If
+    ``should_abstain`` is true for the full sequence, this is always defined (same exceedance
+    rule as ``count_exceeding_threshold``). Returns ``None`` if ``ground_threshold < 1`` or the
+    condition never holds on the prefix up to the sequence length.
+    """
+    if ground_threshold < 1:
+        return None
+    n = min(len(step_means), len(active))
+    c = 0
+    for j in range(n):
+        if not active[j] or np.isnan(tau[j]):
+            continue
+        if step_means[j] > tau[j] + noise:
+            c += 1
+            if c >= ground_threshold:
+                return j
+    return None
+
+
 def example_usable_for_entropy_abstention(d: dict[str, Any]) -> bool:
     """
     True if ``response.logprobs`` has aligned ``tokens`` and ``top_logprobs`` lists
@@ -385,8 +450,8 @@ def filter_usable_examples_entropy(data: list[dict[str, Any]]) -> list[dict[str,
     Drop examples that cannot run entropy-based abstention (missing/invalid logprob tokens).
 
     Call this **before** ``stratified_val_test_split``. The split then applies to the **usable
-    pool only**: validation has exactly ``val_size`` rows (when ``len(data) > val_size`` after
-    filtering), and test has ``len(data) - val_size`` rows. Hyperparameters (τ, active steps)
+    pool only** (in the step-entropy experiment script, validation size is a **fraction** of this
+    pool; other scripts may use a fixed count). Hyperparameters (τ, active steps)
     are fit on validation; test evaluation uses only usable examples — same methodology as when
     every row was usable, with a smaller effective dataset.
     """

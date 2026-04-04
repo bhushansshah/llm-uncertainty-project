@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """
-Step **negative log probability** abstention experiment (validation grid + test).
+Step **KL(U‖p)** abstention experiment (validation grid + test).
+
+Per-token signal is **KL of uniform over V types to the completed distribution** from top‑k
+logprobs with remainder mass spread uniformly over the other ``V - k`` types (see ``abstain_kl``).
 
 Hyperparameter grids are **data-driven** from the validation split (see ``run_grid``), matching
-``abstain_step_entropy_experiment.py`` except the per-step signal is **mean −log p** per chunk
-(thinking only) instead of mean entropy:
+``abstain_step_neg_logprob_experiment.py`` except the per-step signal is mean KL per chunk
+(thinking only):
 
   - **chunk_size:** 50, 100, … up to the 70th percentile of thinking-token lengths (step 50).
   - **delta:** 20 values from μ − 2.5σ to μ + 2.5σ over positive (incorrect − correct) gaps.
@@ -12,8 +15,9 @@ Hyperparameter grids are **data-driven** from the validation split (see ``run_gr
     percentile of 2.5 × within-step std of **correct** responses on active steps.
   - **ground_threshold:** 1..20 (min active steps exceeding τ + offset to abstain).
 
-Requires per-token log probs under ``response.logprobs.token_logprobs`` or
-``response.logprobs.logprobs``; see ``get_per_token_logprob_list`` in ``abstain_step_entropy.py``.
+**Vocabulary size V** is required: ``--vocab_size`` for single ``--results_dir`` runs, or
+``--vocab_map`` JSON ``{ "<model_folder_name>": V, ... }`` in batch mode (models missing from the
+map are skipped).
 
 Active steps additionally require at least ``min_support_per_class`` correct **and** incorrect
 validation responses at that step (default: 3).
@@ -23,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import os
 import sys
 from pathlib import Path
@@ -34,7 +39,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from abstain_batch_utils import (  # noqa: E402
-    METHOD_NEG_LOGPROB,
+    METHOD_STEP_KL,
     discover_models_in_dataset,
 )
 from abstain_experiment_common import (  # noqa: E402
@@ -43,26 +48,41 @@ from abstain_experiment_common import (  # noqa: E402
     sanitize_filename_component,
     stratified_val_test_split_fraction as stratified_val_test_split,
 )
+from abstain_kl import (  # noqa: E402
+    filter_usable_examples_kl,
+    token_kls_thinking_only,
+)
 from abstain_step_entropy import (  # noqa: E402
     abstention_f1,
     build_active_and_tau_with_min_support,
     chunk_step_means,
-    filter_usable_examples_neg_logprob,
     should_abstain,
-    token_neg_log_probs_thinking_only,
     total_tokens_in_response,
     val_step_means_and_counts_from_step_lists,
 )
 
 
-def val_step_neg_logprob_stats(
+def load_vocab_map(path: str) -> dict[str, int]:
+    """JSON object ``{ "<model_folder_name>": V, ... }`` mapping model dirs to vocabulary size."""
+    with open(path, encoding="utf-8") as f:
+        raw = json.load(f)
+    if not isinstance(raw, dict):
+        raise ValueError("vocab_map JSON must be an object mapping model name -> int")
+    out: dict[str, int] = {}
+    for k, v in raw.items():
+        out[str(k)] = int(v)
+    return out
+
+
+def val_step_kl_stats(
     val_data: list[dict],
     chunk_size: int,
+    vocab_size: int,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     correct_steps: list[list[float]] = []
     incorrect_steps: list[list[float]] = []
     for d in val_data:
-        v = token_neg_log_probs_thinking_only(d)
+        v = token_kls_thinking_only(d, vocab_size)
         steps = chunk_step_means(v, chunk_size)
         if d.get("is_correct"):
             correct_steps.append(steps)
@@ -75,16 +95,18 @@ def run_grid(
     val_data: list[dict],
     save_csv: str | None,
     min_support_per_class: int,
+    vocab_size: int,
 ) -> tuple[dict, list, list[tuple[int, float, np.ndarray]]]:
-    thinking_nll = [token_neg_log_probs_thinking_only(d) for d in val_data]
+    thinking_kl = [token_kls_thinking_only(d, vocab_size) for d in val_data]
     return run_step_signal_grid(
-        val_data, thinking_nll, save_csv, min_support_per_class
+        val_data, thinking_kl, save_csv, min_support_per_class
     )
 
 
-def _format_parameter_type(best: dict) -> str:
+def _format_parameter_type(best: dict, vocab_size: int) -> str:
     off = best.get("offset", best.get("noise"))
     return (
+        f"vocab_size={int(vocab_size)}, "
         f"chunk_size={int(best['chunk_size'])}, "
         f"delta={float(best['delta'])}, "
         f"offset={float(off)}, "
@@ -97,6 +119,7 @@ def run_abstention_evaluate(
     val_data: list[dict],
     test_data: list[dict],
     best: dict,
+    vocab_size: int,
 ) -> dict:
     chunk_size = int(best["chunk_size"])
     delta = float(best["delta"])
@@ -104,7 +127,9 @@ def run_abstention_evaluate(
     ground_threshold = int(best["ground_threshold"])
     min_support = int(best.get("min_support_per_class", 3))
 
-    mean_corr, mean_inc, n_corr, n_inc = val_step_neg_logprob_stats(val_data, chunk_size)
+    mean_corr, mean_inc, n_corr, n_inc = val_step_kl_stats(
+        val_data, chunk_size, vocab_size
+    )
     active, tau = build_active_and_tau_with_min_support(
         mean_corr, mean_inc, delta, n_corr, n_inc, min_support
     )
@@ -114,7 +139,7 @@ def run_abstention_evaluate(
     saved_tokens = 0
 
     for d in test_data:
-        steps = chunk_step_means(token_neg_log_probs_thinking_only(d), chunk_size)
+        steps = chunk_step_means(token_kls_thinking_only(d, vocab_size), chunk_size)
         ab = should_abstain(steps, active, tau, offset, ground_threshold)
         abstain_flags.append(ab)
         if ab:
@@ -162,7 +187,7 @@ def run_abstention_evaluate(
     }
 
 
-def plot_validation_step_neg_logprob_curves(
+def plot_validation_step_kl_curves(
     mean_corr: np.ndarray,
     mean_inc: np.ndarray,
     active: np.ndarray,
@@ -191,7 +216,7 @@ def plot_validation_step_neg_logprob_curves(
             mean_corr[mask_c],
             color="tab:green",
             linewidth=2,
-            label="Val — mean −log p (correct)",
+            label="Val — mean KL(U‖p) (correct)",
         )
     if np.any(mask_i):
         ax.plot(
@@ -199,7 +224,7 @@ def plot_validation_step_neg_logprob_curves(
             mean_inc[mask_i],
             color="tab:orange",
             linewidth=2,
-            label="Val — mean −log p (incorrect)",
+            label="Val — mean KL(U‖p) (incorrect)",
         )
 
     act_idx = np.where(active)[0]
@@ -223,9 +248,9 @@ def plot_validation_step_neg_logprob_curves(
         )
 
     ax.set_xlabel("Step index (non-overlapping chunk)")
-    ax.set_ylabel("Mean chunk −log p (thinking tokens)")
+    ax.set_ylabel("Mean chunk KL(U‖p) (thinking tokens)")
     title = (
-        f"Validation: mean −log p vs step | chunk_size={chunk_size}, δ={delta}, offset={offset}"
+        f"Validation: mean KL(U‖p) vs step | chunk_size={chunk_size}, δ={delta}, offset={offset}"
     )
     if model_name:
         title = f"{model_name}\n{title}"
@@ -237,14 +262,14 @@ def plot_validation_step_neg_logprob_curves(
     plt.close(fig)
 
 
-def plot_threshold_marks_neg_logprob(
+def plot_threshold_marks_kl(
     mean_corr: np.ndarray,
     mean_inc: np.ndarray,
     tau_records: list[tuple[int, float, np.ndarray]],
     out_path: str,
     model_name: str | None = None,
 ) -> None:
-    """Validation mean −log p curves + all τ[j] from the grid (finite values)."""
+    """Validation mean KL(U‖p) curves + all τ[j] from the grid (finite values)."""
     try:
         import matplotlib.pyplot as plt
     except ImportError as e:
@@ -263,7 +288,7 @@ def plot_threshold_marks_neg_logprob(
             mean_corr[mask_c],
             color="tab:green",
             linewidth=2,
-            label="Val — mean −log p (correct)",
+            label="Val — mean KL(U‖p) (correct)",
         )
     if np.any(mask_i):
         ax.plot(
@@ -271,7 +296,7 @@ def plot_threshold_marks_neg_logprob(
             mean_inc[mask_i],
             color="tab:orange",
             linewidth=2,
-            label="Val — mean −log p (incorrect)",
+            label="Val — mean KL(U‖p) (incorrect)",
         )
 
     xs: list[int] = []
@@ -295,8 +320,8 @@ def plot_threshold_marks_neg_logprob(
         )
 
     ax.set_xlabel("Step index (non-overlapping chunk)")
-    ax.set_ylabel("Mean chunk −log p / τ (thinking tokens)")
-    title = "Validation: mean −log p vs step with all τ from grid search"
+    ax.set_ylabel("Mean chunk KL(U‖p) / τ (thinking tokens)")
+    title = "Validation: mean KL(U‖p) vs step with all τ from grid search"
     if model_name:
         title = f"{model_name}\n{title}"
     ax.set_title(title)
@@ -311,16 +336,17 @@ def print_test_report(
     val_data: list[dict],
     test_data: list[dict],
     best: dict,
+    vocab_size: int,
     plot_path: str | None = None,
     model_name: str | None = None,
     tau_records: list[tuple[int, float, np.ndarray]] | None = None,
     threshold_marks_path: str | None = None,
 ) -> dict:
-    m = run_abstention_evaluate(val_data, test_data, best)
+    m = run_abstention_evaluate(val_data, test_data, best, vocab_size)
 
     if plot_path:
         try:
-            plot_validation_step_neg_logprob_curves(
+            plot_validation_step_kl_curves(
                 m["mean_corr"],
                 m["mean_inc"],
                 m["active"],
@@ -331,14 +357,14 @@ def print_test_report(
                 plot_path,
                 model_name=model_name,
             )
-            print(f"\nSaved validation step −log p plot: {plot_path}")
+            print(f"\nSaved validation step KL(U‖p) plot: {plot_path}")
         except ImportError as e:
             print(f"\nSkipping plot ({e})")
 
     if threshold_marks_path and tau_records:
         try:
             os.makedirs(os.path.dirname(threshold_marks_path) or ".", exist_ok=True)
-            plot_threshold_marks_neg_logprob(
+            plot_threshold_marks_kl(
                 m["mean_corr"],
                 m["mean_inc"],
                 tau_records,
@@ -378,7 +404,7 @@ def print_test_report(
     print("\n=== Validation set (counts) ===")
     print(f"  Correct: {n_val_correct}, incorrect: {n_val_incorrect}  (N={n_val})")
 
-    print("\n=== Test set (τ/active from validation, −log p steps) ===")
+    print("\n=== Test set (τ/active from validation, KL(U‖p) steps) ===")
     print(
         f"chunk_size={chunk_size}, delta={delta}, offset={offset}, "
         f"ground_threshold={ground_threshold}, min_support_per_class={min_sup}"
@@ -417,10 +443,15 @@ SUMMARY_CSV_COLUMNS = [
 ]
 
 
-def metrics_to_summary_row(model_name: str, best: dict, m: dict) -> dict[str, str | int | float]:
+def metrics_to_summary_row(
+    model_name: str,
+    best: dict,
+    m: dict,
+    vocab_size: int,
+) -> dict[str, str | int | float]:
     return {
         "Model Name": model_name,
-        "Type of Parameters": _format_parameter_type(best),
+        "Type of Parameters": _format_parameter_type(best, vocab_size),
         "Baseline Accuracy (test dataset)": round(m["test_baseline_accuracy"], 6),
         "test accuracy": round(m["test_accuracy"], 6),
         "Number of Correct Responses (test dataset)": m["test_n_correct"],
@@ -448,12 +479,13 @@ def run_dataset_batch(
     val_fraction: float,
     seed: int,
     min_support_per_class: int,
+    vocab_map: dict[str, int],
 ) -> None:
     """
     ``dataset_dir`` is ``<outputs_root>/<dataset_name>/``. Writes ``avg_entropy.csv`` and
-    ``grid.csv`` under ``abstaining_results_dir/<dataset>/neg_logprob/``, plots under
-    ``abstaining_plots_dir/<dataset>/neg_logprob/``, threshold-marks plots under
-    ``abstaining_threshold_marks_dir/<dataset>/neg_logprob/``.
+    ``grid.csv`` under ``abstaining_results_dir/<dataset>/step_kl/``, plots under
+    ``abstaining_plots_dir/<dataset>/step_kl/``, threshold-marks plots under
+    ``abstaining_threshold_marks_dir/<dataset>/step_kl/``.
     """
     dataset_path = Path(dataset_dir)
     dataset_name = dataset_path.name
@@ -462,9 +494,9 @@ def run_dataset_batch(
         print(f"No usable model directories under {dataset_dir}")
         return
 
-    plots_dir = Path(abstaining_plots_dir) / dataset_name / METHOD_NEG_LOGPROB
-    marks_dir = Path(abstaining_threshold_marks_dir) / dataset_name / METHOD_NEG_LOGPROB
-    results_dir = Path(abstaining_results_dir) / dataset_name / METHOD_NEG_LOGPROB
+    plots_dir = Path(abstaining_plots_dir) / dataset_name / METHOD_STEP_KL
+    marks_dir = Path(abstaining_threshold_marks_dir) / dataset_name / METHOD_STEP_KL
+    results_dir = Path(abstaining_results_dir) / dataset_name / METHOD_STEP_KL
     plots_dir.mkdir(parents=True, exist_ok=True)
     marks_dir.mkdir(parents=True, exist_ok=True)
     results_dir.mkdir(parents=True, exist_ok=True)
@@ -474,9 +506,13 @@ def run_dataset_batch(
 
     for model_name, res_dir in model_dirs:
         print(f"\n{'='*60}\nModel: {model_name}\n{res_dir}\n{'='*60}")
+        vocab_size = vocab_map.get(model_name)
+        if vocab_size is None:
+            print(f"SKIP: model {model_name!r} not in vocab_map (need V for KL(U||p))")
+            continue
         data = load_results_flat_dir(res_dir)
         n_raw = len(data)
-        data = filter_usable_examples_neg_logprob(data)
+        data = filter_usable_examples_kl(data)
         if len(data) != n_raw:
             print(
                 f"Dropped {n_raw - len(data)} examples without usable logprobs/tokens; "
@@ -499,7 +535,10 @@ def run_dataset_batch(
         )
 
         best, grid_rows, tau_records = run_grid(
-            val_data, save_csv=None, min_support_per_class=min_support_per_class
+            val_data,
+            save_csv=None,
+            min_support_per_class=min_support_per_class,
+            vocab_size=vocab_size,
         )
         if not best:
             print("SKIP: no grid results.")
@@ -513,19 +552,20 @@ def run_dataset_batch(
             print(f"  {k}: {v}")
 
         safe = sanitize_filename_component(model_name)
-        plot_path = os.path.join(plots_dir, f"{safe}_val_step_neg_logprob.png")
+        plot_path = os.path.join(plots_dir, f"{safe}_val_step_kl.png")
         threshold_marks_path = os.path.join(marks_dir, f"{safe}_threshold_marks.png")
 
         m = print_test_report(
             val_data,
             test_data,
             best,
+            vocab_size,
             plot_path=plot_path,
             model_name=model_name,
             tau_records=tau_records,
             threshold_marks_path=threshold_marks_path,
         )
-        summary_rows.append(metrics_to_summary_row(model_name, best, m))
+        summary_rows.append(metrics_to_summary_row(model_name, best, m, vocab_size))
 
     if not summary_rows:
         print("No models produced results; result CSVs not written.")
@@ -555,7 +595,7 @@ def run_dataset_batch(
 
 def main() -> None:
     p = argparse.ArgumentParser(
-        description="Step −log p abstention grid + test (single model dir or batch over outputs layout)"
+        description="Step KL(U‖p) abstention grid + test (single model dir or batch over outputs layout)"
     )
     p.add_argument(
         "--results_dir",
@@ -582,22 +622,34 @@ def main() -> None:
         help="Model folder names to include (batch mode). If omitted, all models under the dataset are used.",
     )
     p.add_argument(
+        "--vocab_map",
+        type=str,
+        default=None,
+        help="JSON path mapping model folder name -> vocabulary size V (required in batch mode)",
+    )
+    p.add_argument(
+        "--vocab_size",
+        type=int,
+        default=None,
+        help="Full vocabulary size V for single --results_dir runs (required)",
+    )
+    p.add_argument(
         "--abstaining_results_dir",
         type=str,
         default="abstaining_results",
-        help="Root for abstaining_results/<dataset>/neg_logprob/avg_entropy.csv (batch mode; summary only)",
+        help="Root for abstaining_results/<dataset>/step_kl/avg_entropy.csv (batch mode; summary only)",
     )
     p.add_argument(
         "--abstaining_plots_dir",
         type=str,
         default="abstaining_plots",
-        help="Root for abstaining_plots/<dataset>/neg_logprob/*.png (batch mode)",
+        help="Root for abstaining_plots/<dataset>/step_kl/*.png (batch mode)",
     )
     p.add_argument(
         "--abstaining_threshold_marks_dir",
         type=str,
         default="abstaining_threshold_marks",
-        help="Root for abstaining_threshold_marks/<dataset>/neg_logprob/*_threshold_marks.png (batch/single)",
+        help="Root for abstaining_threshold_marks/<dataset>/step_kl/*_threshold_marks.png (batch/single)",
     )
     p.add_argument(
         "--val_fraction",
@@ -617,7 +669,7 @@ def main() -> None:
         "--plot_path",
         type=str,
         default=None,
-        help="Validation plot path (single mode). Default: <results_dir>/abstain_val_step_neg_logprob.png",
+        help="Validation plot path (single mode). Default: <results_dir>/abstain_val_step_kl.png",
     )
     p.add_argument("--no_plot", action="store_true", help="Do not write validation plot")
     args = p.parse_args()
@@ -627,6 +679,9 @@ def main() -> None:
     if args.outputs_dir is not None:
         if not args.dataset:
             p.error("--outputs_dir requires --dataset")
+        if not args.vocab_map:
+            p.error("batch mode requires --vocab_map (JSON: model folder name -> V)")
+        vocab_map = load_vocab_map(args.vocab_map)
         run_dataset_batch(
             os.path.join(args.outputs_dir, args.dataset),
             list(args.models or []),
@@ -636,16 +691,20 @@ def main() -> None:
             args.val_fraction,
             args.seed,
             args.min_support_per_class,
+            vocab_map,
         )
         return
 
     if not args.results_dir:
         p.error("Provide --results_dir (single model) or --outputs_dir and --dataset (batch)")
+    if args.vocab_size is None:
+        p.error("single-model mode requires --vocab_size (full vocabulary size V)")
+    vocab_size = int(args.vocab_size)
 
     data = load_results_flat_dir(args.results_dir)
     print(f"Loaded {len(data)} result files from {args.results_dir}")
     n_raw = len(data)
-    data = filter_usable_examples_neg_logprob(data)
+    data = filter_usable_examples_kl(data)
     if len(data) != n_raw:
         print(
             f"Dropped {n_raw - len(data)} examples without usable logprobs/tokens; "
@@ -662,7 +721,9 @@ def main() -> None:
         f"(val_fraction={args.val_fraction})"
     )
 
-    best, _, tau_records = run_grid(val_data, args.output_csv, args.min_support_per_class)
+    best, _, tau_records = run_grid(
+        val_data, args.output_csv, args.min_support_per_class, vocab_size
+    )
     if not best:
         print("No grid results.")
         return
@@ -675,10 +736,10 @@ def main() -> None:
     threshold_marks_path: str | None = None
     if not args.no_plot:
         plot_path = args.plot_path or os.path.join(
-            args.results_dir, "abstain_val_step_neg_logprob.png"
+            args.results_dir, "abstain_val_step_kl.png"
         )
         res_name = Path(args.results_dir).name
-        tm_dir = Path(args.abstaining_threshold_marks_dir) / res_name / METHOD_NEG_LOGPROB
+        tm_dir = Path(args.abstaining_threshold_marks_dir) / res_name / METHOD_STEP_KL
         tm_dir.mkdir(parents=True, exist_ok=True)
         safe = sanitize_filename_component(res_name)
         threshold_marks_path = str(tm_dir / f"{safe}_threshold_marks.png")
@@ -687,6 +748,7 @@ def main() -> None:
         val_data,
         test_data,
         best,
+        vocab_size,
         plot_path=plot_path,
         model_name=None,
         tau_records=tau_records,

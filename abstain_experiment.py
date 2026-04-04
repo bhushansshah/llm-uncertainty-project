@@ -19,6 +19,7 @@ _SCRIPTS = _ROOT / "scripts"
 METHOD_TO_SCRIPT = {
     "step_entropy": "abstain_step_entropy_experiment.py",
     "neg_logprob": "abstain_step_neg_logprob_experiment.py",
+    "step_kl": "abstain_step_kl_experiment.py",
     "agg_entropy": "abstain_step_agg_entropy_experiment.py",
 }
 
@@ -51,7 +52,7 @@ def main() -> None:
         nargs="+",
         choices=list(METHOD_TO_SCRIPT.keys()),
         default=["step_entropy", "neg_logprob", "agg_entropy"],
-        help="Which abstention pipelines to run (default: all three)",
+        help="Which abstention pipelines to run (default: step_entropy, neg_logprob, agg_entropy; add step_kl with --vocab_map)",
     )
     p.add_argument(
         "--abstaining_results_dir",
@@ -65,7 +66,24 @@ def main() -> None:
         default="abstaining_plots",
         help="Root for per-dataset/method validation plots (default: abstaining_plots)",
     )
-    p.add_argument("--val_size", type=int, default=60)
+    p.add_argument(
+        "--val_size",
+        type=int,
+        default=60,
+        help="Validation set size for agg_entropy batch script only (count)",
+    )
+    p.add_argument(
+        "--val_fraction",
+        type=float,
+        default=0.3,
+        help="Validation fraction for step_entropy, neg_logprob, and step_kl (e.g. 0.3 → 30%%)",
+    )
+    p.add_argument(
+        "--vocab_map",
+        type=str,
+        default=None,
+        help="JSON path mapping model folder name -> vocabulary size V (required when method includes step_kl)",
+    )
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--min_support_per_class", type=int, default=3)
     args = p.parse_args()
@@ -95,13 +113,23 @@ def main() -> None:
                 args.abstaining_results_dir,
                 "--abstaining_plots_dir",
                 args.abstaining_plots_dir,
-                "--val_size",
-                str(args.val_size),
                 "--seed",
                 str(args.seed),
                 "--min_support_per_class",
                 str(args.min_support_per_class),
             ]
+            if method in ("step_entropy", "neg_logprob", "step_kl"):
+                cmd.extend(["--val_fraction", str(args.val_fraction)])
+            else:
+                cmd.extend(["--val_size", str(args.val_size)])
+            if method == "step_kl":
+                if not args.vocab_map:
+                    print(
+                        "SKIP: step_kl requires --vocab_map (JSON: model folder name -> V)",
+                        file=sys.stderr,
+                    )
+                    continue
+                cmd.extend(["--vocab_map", args.vocab_map])
             if args.models:
                 cmd.extend(["--models", *args.models])
 

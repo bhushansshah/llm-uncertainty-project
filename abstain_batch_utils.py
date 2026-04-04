@@ -9,6 +9,7 @@ from pathlib import Path
 # Subdirectory names under abstaining_results/<dataset>/ and abstaining_plots/<dataset>/
 METHOD_STEP_ENTROPY = "step_entropy"
 METHOD_NEG_LOGPROB = "neg_logprob"
+METHOD_STEP_KL = "step_kl"
 METHOD_AGG_ENTROPY = "agg_entropy"
 
 

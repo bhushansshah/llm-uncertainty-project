@@ -24,8 +24,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import glob
-import json
 import os
 import sys
 from pathlib import Path
@@ -40,6 +38,12 @@ from abstain_batch_utils import (  # noqa: E402
     METHOD_AGG_ENTROPY,
     discover_models_in_dataset,
 )
+from abstain_experiment_common import (  # noqa: E402
+    evaluate_split_cached,
+    load_results_flat_dir,
+    sanitize_filename_component,
+    stratified_val_test_split_fixed_size as stratified_val_test_split,
+)
 from abstain_step_entropy import (  # noqa: E402
     abstention_f1,
     build_active_and_tau_with_min_support,
@@ -51,66 +55,6 @@ from abstain_step_entropy import (  # noqa: E402
     total_tokens_in_response,
     val_step_means_and_counts_from_step_lists,
 )
-from sklearn.model_selection import train_test_split  # noqa: E402
-
-
-def load_results_flat_dir(results_dir: str) -> list[dict]:
-    pattern = os.path.join(results_dir, "result_*.json")
-    files = sorted(
-        glob.glob(pattern),
-        key=lambda f: int(os.path.basename(f).split("_")[1].split(".")[0]),
-    )
-    out = []
-    for fp in files:
-        with open(fp, encoding="utf-8") as f:
-            out.append(json.load(f))
-    return out
-
-
-def stratified_val_test_split(
-    data: list[dict],
-    val_size: int,
-    seed: int,
-) -> tuple[list[dict], list[dict]]:
-    n = len(data)
-    if n <= val_size:
-        raise ValueError(f"Need more than val_size={val_size} examples, got {n}")
-    labels = [1 if d.get("is_correct") else 0 for d in data]
-    idx = np.arange(n)
-
-    use_stratify = len(set(labels)) >= 2 and val_size >= 2 and (n - val_size) >= 2
-    if use_stratify:
-        try:
-            val_ix, test_ix = train_test_split(
-                idx,
-                train_size=val_size,
-                random_state=seed,
-                stratify=labels,
-            )
-            return [data[i] for i in val_ix], [data[i] for i in test_ix]
-        except ValueError:
-            pass
-
-    rng = np.random.default_rng(seed)
-    rng.shuffle(idx)
-    val_data = [data[i] for i in idx[:val_size]]
-    test_data = [data[i] for i in idx[val_size:]]
-    return val_data, test_data
-
-
-def evaluate_split_cached(
-    step_series_per_example: list[list[float]],
-    labels: list[bool],
-    active: np.ndarray,
-    tau: np.ndarray,
-    noise: float,
-    ground_threshold: int,
-) -> tuple[float, float, float]:
-    flags: list[bool] = []
-    for steps in step_series_per_example:
-        flags.append(should_abstain(steps, active, tau, noise, ground_threshold))
-    prec, rec, f1, _, _, _ = abstention_f1(flags, labels)
-    return prec, rec, f1
 
 
 def run_grid(
@@ -470,11 +414,6 @@ def metrics_to_summary_row(model_name: str, best: dict, m: dict) -> dict[str, st
     }
 
 
-def _sanitize_filename_component(name: str) -> str:
-    safe = "".join(c if c not in r'\/:*?"<>|' else "_" for c in name)
-    return safe.strip() or "model"
-
-
 def run_dataset_batch(
     dataset_dir: str,
     model_names: list[str],
@@ -536,7 +475,7 @@ def run_dataset_batch(
         for k, v in best.items():
             print(f"  {k}: {v}")
 
-        safe = _sanitize_filename_component(model_name)
+        safe = sanitize_filename_component(model_name)
         plot_path = os.path.join(plots_dir, f"{safe}_val_step_agg_entropy.png")
 
         m = print_test_report(

@@ -2,14 +2,19 @@
 """
 Step-entropy abstention experiment (validation grid search + test evaluation).
 
-Hyperparameters (grid):
-  - chunk_size: 50..600 step 50
-  - delta: min gap between incorrect/correct mean step entropy on validation (0.02..0.08 step 0.01)
-  - noise: added to tau when comparing step entropy (0.01..0.10 step 0.01)
-  - ground_threshold: min number of "bad" active steps to abstain (1..10)
+Hyperparameter grids are **data-driven** from the validation split (see ``run_grid``):
+
+  - **chunk_size:** 50, 100, … up to the 70th percentile of thinking-token lengths (step 50).
+  - **delta:** 20 values from μ − 2.5σ to μ + 2.5σ where μ, σ are the mean and std of
+    (incorrect_mean − correct_mean) over steps with incorrect > correct and min support.
+  - **offset** (formerly noise): for each (chunk_size, δ), up to 20 values from 0 to the 95th
+    percentile of 2.5 × within-step std of correct responses on active steps.
+  - **ground_threshold:** 1..20 (min active steps exceeding τ + offset to abstain).
 
 Metrics:
   - Validation: maximize F1 of abstention (TP = abstain & wrong, FP = abstain & correct)
+  - ``grid.csv`` rows include ``validation_accuracy``: (# non-abstained & correct on validation) /
+    N_val for each hyperparameter row (same abstention policy as precision/recall/F1).
   - Test accuracy: (# non-abstained & is_correct) / N_test (abstain counts as failure)
 
 Active steps additionally require at least ``min_support_per_class`` correct **and** incorrect
@@ -20,8 +25,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import glob
-import json
 import os
 import sys
 from pathlib import Path
@@ -37,6 +40,12 @@ from abstain_batch_utils import (  # noqa: E402
     METHOD_STEP_ENTROPY,
     discover_models_in_dataset,
 )
+from abstain_experiment_common import (  # noqa: E402
+    load_results_flat_dir,
+    run_step_signal_grid,
+    sanitize_filename_component,
+    stratified_val_test_split_fraction as stratified_val_test_split,
+)
 from abstain_step_entropy import (  # noqa: E402
     abstention_f1,
     build_active_and_tau_with_min_support,
@@ -47,154 +56,26 @@ from abstain_step_entropy import (  # noqa: E402
     total_tokens_in_response,
     val_step_means_and_counts_from_step_lists,
 )
-from sklearn.model_selection import train_test_split  # noqa: E402
-
-
-def load_results_flat_dir(results_dir: str) -> list[dict]:
-    pattern = os.path.join(results_dir, "result_*.json")
-    files = sorted(
-        glob.glob(pattern),
-        key=lambda f: int(os.path.basename(f).split("_")[1].split(".")[0]),
-    )
-    out = []
-    for fp in files:
-        with open(fp, encoding="utf-8") as f:
-            out.append(json.load(f))
-    return out
-
-
-def stratified_val_test_split(
-    data: list[dict],
-    val_size: int,
-    seed: int,
-) -> tuple[list[dict], list[dict]]:
-    n = len(data)
-    if n <= val_size:
-        raise ValueError(f"Need more than val_size={val_size} examples, got {n}")
-    labels = [1 if d.get("is_correct") else 0 for d in data]
-    idx = np.arange(n)
-
-    # Stratify when possible (both classes present and enough samples per class)
-    use_stratify = len(set(labels)) >= 2 and val_size >= 2 and (n - val_size) >= 2
-    if use_stratify:
-        try:
-            val_ix, test_ix = train_test_split(
-                idx,
-                train_size=val_size,
-                random_state=seed,
-                stratify=labels,
-            )
-            return [data[i] for i in val_ix], [data[i] for i in test_ix]
-        except ValueError:
-            pass
-
-    rng = np.random.default_rng(seed)
-    rng.shuffle(idx)
-    val_data = [data[i] for i in idx[:val_size]]
-    test_data = [data[i] for i in idx[val_size:]]
-    return val_data, test_data
-
-
-def evaluate_split_cached(
-    step_means_per_example: list[list[float]],
-    labels: list[bool],
-    active: np.ndarray,
-    tau: np.ndarray,
-    noise: float,
-    ground_threshold: int,
-) -> tuple[float, float, float]:
-    flags: list[bool] = []
-    for steps in step_means_per_example:
-        flags.append(should_abstain(steps, active, tau, noise, ground_threshold))
-    prec, rec, f1, _, _, _ = abstention_f1(flags, labels)
-    return prec, rec, f1
 
 
 def run_grid(
     val_data: list[dict],
     save_csv: str | None,
     min_support_per_class: int,
-) -> tuple[dict, list]:
-    chunk_sizes = list(range(50, 601, 50))
-    deltas = [round(0.02 + 0.01 * i, 2) for i in range(7)]  # 0.02..0.08
-    noises = [round(0.01 + 0.01 * i, 2) for i in range(10)]  # 0.01..0.10
-    grounds = list(range(1, 11))
-
-    # One thinking-entropy pass per validation example; then chunk once per chunk_size
+) -> tuple[dict, list, list[tuple[int, float, np.ndarray]]]:
     thinking_ent = [token_entropies_thinking_only(d) for d in val_data]
-    labels = [bool(d.get("is_correct")) for d in val_data]
-    correct_steps_by_cs: dict[int, list[list[float]]] = {}
-    incorrect_steps_by_cs: dict[int, list[list[float]]] = {}
-    for cs in chunk_sizes:
-        csl, isl = [], []
-        for d, ent in zip(val_data, thinking_ent):
-            steps = chunk_step_means(ent, cs)
-            if d.get("is_correct"):
-                csl.append(steps)
-            else:
-                isl.append(steps)
-        correct_steps_by_cs[cs] = csl
-        incorrect_steps_by_cs[cs] = isl
-
-    step_means_flat_by_cs: dict[int, list[list[float]]] = {}
-    for cs in chunk_sizes:
-        step_means_flat_by_cs[cs] = [
-            chunk_step_means(ent, cs) for ent in thinking_ent
-        ]
-
-    best: dict | None = None
-    rows = []
-
-    for chunk_size in chunk_sizes:
-        mean_corr, mean_inc, n_corr, n_inc = val_step_means_and_counts_from_step_lists(
-            correct_steps_by_cs[chunk_size],
-            incorrect_steps_by_cs[chunk_size],
-        )
-        for delta in deltas:
-            active, tau = build_active_and_tau_with_min_support(
-                mean_corr, mean_inc, delta, n_corr, n_inc, min_support_per_class
-            )
-            for noise in noises:
-                for g in grounds:
-                    prec, rec, f1 = evaluate_split_cached(
-                        step_means_flat_by_cs[chunk_size],
-                        labels,
-                        active,
-                        tau,
-                        noise,
-                        g,
-                    )
-                    row = {
-                        "chunk_size": chunk_size,
-                        "delta": delta,
-                        "noise": noise,
-                        "ground_threshold": g,
-                        "min_support_per_class": min_support_per_class,
-                        "precision": prec,
-                        "recall": rec,
-                        "f1": f1,
-                    }
-                    rows.append(row)
-                    if best is None or f1 > best["f1"] or (
-                        f1 == best["f1"] and chunk_size < best["chunk_size"]
-                    ):
-                        best = dict(row)
-
-    if save_csv and rows:
-        with open(save_csv, "w", newline="", encoding="utf-8") as f:
-            w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
-            w.writeheader()
-            w.writerows(rows)
-
-    return (best or {}), rows
+    return run_step_signal_grid(
+        val_data, thinking_ent, save_csv, min_support_per_class
+    )
 
 
 def _format_parameter_type(best: dict) -> str:
     """Human-readable best hyperparameters for CSV."""
+    off = best.get("offset", best.get("noise"))
     return (
         f"chunk_size={int(best['chunk_size'])}, "
         f"delta={float(best['delta'])}, "
-        f"noise={float(best['noise'])}, "
+        f"offset={float(off)}, "
         f"ground_threshold={int(best['ground_threshold'])}, "
         f"min_support_per_class={int(best.get('min_support_per_class', 3))}"
     )
@@ -208,10 +89,11 @@ def run_abstention_evaluate(
     """
     Run abstention on test using τ/active from validation best hyperparameters.
     Returns metrics; validation precision/recall/F1 come from `best` (grid search on val).
+    Test abstention precision/recall/F1 are computed on the test split with those hyperparameters.
     """
     chunk_size = int(best["chunk_size"])
     delta = float(best["delta"])
-    noise = float(best["noise"])
+    offset = float(best.get("offset", best.get("noise", 0.0)))
     ground_threshold = int(best["ground_threshold"])
     min_support = int(best.get("min_support_per_class", 3))
 
@@ -226,13 +108,13 @@ def run_abstention_evaluate(
 
     for d in test_data:
         steps = chunk_step_means(token_entropies_thinking_only(d), chunk_size)
-        ab = should_abstain(steps, active, tau, noise, ground_threshold)
+        ab = should_abstain(steps, active, tau, offset, ground_threshold)
         abstain_flags.append(ab)
         if ab:
             saved_tokens += token_lens[len(abstain_flags) - 1]
 
     labels = [bool(d.get("is_correct")) for d in test_data]
-    _, _, _, tp, fp, _ = abstention_f1(abstain_flags, labels)
+    prec_t, rec_t, f1_t, tp, fp, _ = abstention_f1(abstain_flags, labels)
 
     n = len(test_data)
     n_test_correct = sum(1 for x in labels if x)
@@ -253,6 +135,9 @@ def run_abstention_evaluate(
         "test_n_correct": n_test_correct,
         "test_n_incorrect": n_test_incorrect,
         "test_accuracy": test_acc,
+        "test_abstention_precision": float(prec_t),
+        "test_abstention_recall": float(rec_t),
+        "test_abstention_f1": float(f1_t),
         "test_abstained_incorrect": tp,
         "test_abstained_correct": fp,
         "mean_tokens_saved_per_abstain": mean_saved,
@@ -264,7 +149,7 @@ def run_abstention_evaluate(
         "tau": tau,
         "chunk_size": chunk_size,
         "delta": delta,
-        "noise": noise,
+        "offset": offset,
         "ground_threshold": ground_threshold,
         "min_support_per_class": min_support,
     }
@@ -291,7 +176,7 @@ def plot_validation_step_entropy_curves(
     mean_inc: np.ndarray,
     active: np.ndarray,
     tau: np.ndarray,
-    noise: float,
+    offset: float,
     chunk_size: int,
     delta: float,
     out_path: str,
@@ -299,7 +184,7 @@ def plot_validation_step_entropy_curves(
 ) -> None:
     """
     Like test.ipynb aggregate plots: mean chunk entropy vs step index on validation,
-    plus τ at active steps and τ + noise (abstention comparison level).
+    plus τ at active steps and τ + offset (abstention comparison level).
     """
     try:
         import matplotlib.pyplot as plt
@@ -342,17 +227,90 @@ def plot_validation_step_entropy_curves(
         )
         ax.scatter(
             act_idx,
-            tau[act_idx] + noise,
+            tau[act_idx] + offset,
             color="tab:purple",
             s=38,
             marker="x",
             zorder=5,
-            label="τ + noise (abstain if step mean >)",
+            label="τ + offset (abstain if step mean >)",
         )
 
     ax.set_xlabel("Step index (non-overlapping chunk)")
     ax.set_ylabel("Mean chunk entropy (thinking tokens)")
-    title = f"Validation: mean entropy vs step | chunk_size={chunk_size}, δ={delta}, noise={noise}"
+    title = f"Validation: mean entropy vs step | chunk_size={chunk_size}, δ={delta}, offset={offset}"
+    if model_name:
+        title = f"{model_name}\n{title}"
+    ax.set_title(title)
+    ax.legend(loc="best", fontsize=9)
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_threshold_marks(
+    mean_corr: np.ndarray,
+    mean_inc: np.ndarray,
+    tau_records: list[tuple[int, float, np.ndarray]],
+    out_path: str,
+    model_name: str | None = None,
+) -> None:
+    """
+    Validation mean chunk entropy (correct vs incorrect) vs step, plus every τ[j] from the
+    grid (finite values) so all per-step thresholds tried in the experiment are visible.
+    """
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError as e:
+        raise ImportError(
+            "Plotting requires matplotlib. Install with: pip install matplotlib"
+        ) from e
+
+    j = np.arange(len(mean_corr))
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    mask_c = ~np.isnan(mean_corr)
+    mask_i = ~np.isnan(mean_inc)
+    if np.any(mask_c):
+        ax.plot(
+            j[mask_c],
+            mean_corr[mask_c],
+            color="tab:green",
+            linewidth=2,
+            label="Val — mean entropy (correct)",
+        )
+    if np.any(mask_i):
+        ax.plot(
+            j[mask_i],
+            mean_inc[mask_i],
+            color="tab:orange",
+            linewidth=2,
+            label="Val — mean entropy (incorrect)",
+        )
+
+    xs: list[int] = []
+    ys: list[float] = []
+    for _cs, _d, tau in tau_records:
+        for step in range(len(tau)):
+            v = tau[step]
+            if np.isfinite(v):
+                xs.append(step)
+                ys.append(float(v))
+    if xs:
+        ax.scatter(
+            xs,
+            ys,
+            s=10,
+            alpha=0.35,
+            c="tab:red",
+            edgecolors="none",
+            label="τ (all grid chunk_size, δ)",
+            rasterized=True,
+        )
+
+    ax.set_xlabel("Step index (non-overlapping chunk)")
+    ax.set_ylabel("Mean chunk entropy / τ (thinking tokens)")
+    title = "Validation: mean entropy vs step with all τ from grid search"
     if model_name:
         title = f"{model_name}\n{title}"
     ax.set_title(title)
@@ -369,6 +327,8 @@ def print_test_report(
     best: dict,
     plot_path: str | None = None,
     model_name: str | None = None,
+    tau_records: list[tuple[int, float, np.ndarray]] | None = None,
+    threshold_marks_path: str | None = None,
 ) -> dict:
     """Run evaluation, optional plot, print summary; returns metrics dict from run_abstention_evaluate."""
     m = run_abstention_evaluate(val_data, test_data, best)
@@ -380,7 +340,7 @@ def print_test_report(
                 m["mean_inc"],
                 m["active"],
                 m["tau"],
-                m["noise"],
+                m["offset"],
                 m["chunk_size"],
                 m["delta"],
                 plot_path,
@@ -390,13 +350,31 @@ def print_test_report(
         except ImportError as e:
             print(f"\nSkipping plot ({e})")
 
+    if threshold_marks_path and tau_records:
+        try:
+            os.makedirs(os.path.dirname(threshold_marks_path) or ".", exist_ok=True)
+            plot_threshold_marks(
+                m["mean_corr"],
+                m["mean_inc"],
+                tau_records,
+                threshold_marks_path,
+                model_name=model_name,
+            )
+            print(f"\nSaved threshold-marks plot: {threshold_marks_path}")
+        except ImportError as e:
+            print(f"\nSkipping threshold-marks plot ({e})")
+
     chunk_size = m["chunk_size"]
     delta = m["delta"]
-    noise = m["noise"]
+    offset = m["offset"]
     ground_threshold = m["ground_threshold"]
     min_sup = m["min_support_per_class"]
     labels = [bool(d.get("is_correct")) for d in test_data]
-    prec_t, rec_t, f1_t, tp, fp, _ = abstention_f1(m["abstain_flags"], labels)
+    prec_t = m["test_abstention_precision"]
+    rec_t = m["test_abstention_recall"]
+    f1_t = m["test_abstention_f1"]
+    tp = m["test_abstained_incorrect"]
+    fp = m["test_abstained_correct"]
 
     n = len(test_data)
     n_test_correct = m["test_n_correct"]
@@ -417,7 +395,7 @@ def print_test_report(
 
     print("\n=== Test set (tau/active from validation) ===")
     print(
-        f"chunk_size={chunk_size}, delta={delta}, noise={noise}, "
+        f"chunk_size={chunk_size}, delta={delta}, offset={offset}, "
         f"ground_threshold={ground_threshold}, min_support_per_class={min_sup}"
     )
     print(f"Baseline accuracy (all test examples, no abstention): {baseline_acc:.4f}")
@@ -439,12 +417,15 @@ SUMMARY_CSV_COLUMNS = [
     "Model Name",
     "Type of Parameters",
     "Baseline Accuracy (test dataset)",
+    "test accuracy",
     "Number of Correct Responses (test dataset)",
     "Number of Incorrect Responses (test dataset)",
     "F1 Validation Score",
+    "F1 on test (abstention)",
     "Precision on validation",
+    "Precision on test (abstention)",
     "Recall on validation",
-    "test accuracy",
+    "Recall on test (abstention)",
     "among abstained incorrect (test dataset)",
     "Among abstained correct (test dataset)",
     "Mean token saved per abstain response (test dataset)",
@@ -457,12 +438,15 @@ def metrics_to_summary_row(model_name: str, best: dict, m: dict) -> dict[str, st
         "Model Name": model_name,
         "Type of Parameters": _format_parameter_type(best),
         "Baseline Accuracy (test dataset)": round(m["test_baseline_accuracy"], 6),
+        "test accuracy": round(m["test_accuracy"], 6),
         "Number of Correct Responses (test dataset)": m["test_n_correct"],
         "Number of Incorrect Responses (test dataset)": m["test_n_incorrect"],
         "F1 Validation Score": round(m["val_f1"], 6),
+        "F1 on test (abstention)": round(m["test_abstention_f1"], 6),
         "Precision on validation": round(m["val_precision"], 6),
+        "Precision on test (abstention)": round(m["test_abstention_precision"], 6),
         "Recall on validation": round(m["val_recall"], 6),
-        "test accuracy": round(m["test_accuracy"], 6),
+        "Recall on test (abstention)": round(m["test_abstention_recall"], 6),
         "among abstained incorrect (test dataset)": m["test_abstained_incorrect"],
         "Among abstained correct (test dataset)": m["test_abstained_correct"],
         "Mean token saved per abstain response (test dataset)": round(
@@ -471,24 +455,21 @@ def metrics_to_summary_row(model_name: str, best: dict, m: dict) -> dict[str, st
     }
 
 
-def _sanitize_filename_component(name: str) -> str:
-    safe = "".join(c if c not in r'\/:*?"<>|' else "_" for c in name)
-    return safe.strip() or "model"
-
-
 def run_dataset_batch(
     dataset_dir: str,
     model_names: list[str],
     abstaining_results_dir: str,
     abstaining_plots_dir: str,
-    val_size: int,
+    abstaining_threshold_marks_dir: str,
+    val_fraction: float,
     seed: int,
     min_support_per_class: int,
 ) -> None:
     """
     ``dataset_dir`` is ``<outputs_root>/<dataset_name>/``. Writes ``avg_entropy.csv`` and
     ``grid.csv`` under ``abstaining_results_dir/<dataset>/step_entropy/``, plots under
-    ``abstaining_plots_dir/<dataset>/step_entropy/``.
+    ``abstaining_plots_dir/<dataset>/step_entropy/``, threshold-marks plots under
+    ``abstaining_threshold_marks_dir/<dataset>/step_entropy/``.
     """
     dataset_path = Path(dataset_dir)
     dataset_name = dataset_path.name
@@ -498,8 +479,10 @@ def run_dataset_batch(
         return
 
     plots_dir = Path(abstaining_plots_dir) / dataset_name / METHOD_STEP_ENTROPY
+    marks_dir = Path(abstaining_threshold_marks_dir) / dataset_name / METHOD_STEP_ENTROPY
     results_dir = Path(abstaining_results_dir) / dataset_name / METHOD_STEP_ENTROPY
     plots_dir.mkdir(parents=True, exist_ok=True)
+    marks_dir.mkdir(parents=True, exist_ok=True)
     results_dir.mkdir(parents=True, exist_ok=True)
 
     summary_rows: list[dict[str, str | int | float]] = []
@@ -516,19 +499,22 @@ def run_dataset_batch(
                 f"{len(data)} remain."
             )
         n = len(data)
-        if n <= val_size:
-            print(
-                f"SKIP: need more than val_size={val_size} examples, got {n}"
-            )
+        if n < 2:
+            print(f"SKIP: need at least 2 usable examples, got {n}")
+            continue
+        try:
+            val_data, test_data = stratified_val_test_split(data, val_fraction, seed)
+        except ValueError as e:
+            print(f"SKIP: {e}")
             continue
         n_usable = len(data)
-        val_data, test_data = stratified_val_test_split(data, val_size, seed)
         print(
             f"Stratified split on {n_usable} usable examples: "
-            f"validation={len(val_data)}, test={len(test_data)} (val_size={val_size})"
+            f"validation={len(val_data)}, test={len(test_data)} "
+            f"(val_fraction={val_fraction})"
         )
 
-        best, grid_rows = run_grid(
+        best, grid_rows, tau_records = run_grid(
             val_data, save_csv=None, min_support_per_class=min_support_per_class
         )
         if not best:
@@ -542,8 +528,9 @@ def run_dataset_batch(
         for k, v in best.items():
             print(f"  {k}: {v}")
 
-        safe = _sanitize_filename_component(model_name)
+        safe = sanitize_filename_component(model_name)
         plot_path = os.path.join(plots_dir, f"{safe}_val_step_entropy.png")
+        threshold_marks_path = os.path.join(marks_dir, f"{safe}_threshold_marks.png")
 
         m = print_test_report(
             val_data,
@@ -551,6 +538,8 @@ def run_dataset_batch(
             best,
             plot_path=plot_path,
             model_name=model_name,
+            tau_records=tau_records,
+            threshold_marks_path=threshold_marks_path,
         )
         summary_rows.append(metrics_to_summary_row(model_name, best, m))
 
@@ -620,7 +609,18 @@ def main() -> None:
         default="abstaining_plots",
         help="Root for abstaining_plots/<dataset>/step_entropy/*.png (batch mode)",
     )
-    p.add_argument("--val_size", type=int, default=60, help="Validation set size (rest is test)")
+    p.add_argument(
+        "--abstaining_threshold_marks_dir",
+        type=str,
+        default="abstaining_threshold_marks",
+        help="Root for abstaining_threshold_marks/<dataset>/step_entropy/*_threshold_marks.png (batch/single)",
+    )
+    p.add_argument(
+        "--val_fraction",
+        type=float,
+        default=0.3,
+        help="Fraction of usable responses in the validation set (e.g. 0.3 → 30%%); rest is test",
+    )
     p.add_argument("--seed", type=int, default=42)
     p.add_argument(
         "--min_support_per_class",
@@ -641,6 +641,8 @@ def main() -> None:
         help="Do not write the validation step-entropy plot.",
     )
     args = p.parse_args()
+    if not (0.0 < args.val_fraction < 1.0):
+        p.error("--val_fraction must be strictly between 0 and 1 (e.g. 0.3 for 30%% validation)")
 
     if args.outputs_dir is not None:
         if not args.dataset:
@@ -650,7 +652,8 @@ def main() -> None:
             list(args.models or []),
             args.abstaining_results_dir,
             args.abstaining_plots_dir,
-            args.val_size,
+            args.abstaining_threshold_marks_dir,
+            args.val_fraction,
             args.seed,
             args.min_support_per_class,
         )
@@ -670,13 +673,18 @@ def main() -> None:
         )
 
     n_usable = len(data)
-    val_data, test_data = stratified_val_test_split(data, args.val_size, args.seed)
+    if n_usable < 2:
+        raise SystemExit(f"Need at least 2 usable examples after filtering, got {n_usable}")
+    val_data, test_data = stratified_val_test_split(data, args.val_fraction, args.seed)
     print(
         f"Stratified split on {n_usable} usable examples: "
-        f"validation={len(val_data)}, test={len(test_data)} (val_size={args.val_size})"
+        f"validation={len(val_data)}, test={len(test_data)} "
+        f"(val_fraction={args.val_fraction})"
     )
 
-    best, _ = run_grid(val_data, args.output_csv, args.min_support_per_class)
+    best, _, tau_records = run_grid(
+        val_data, args.output_csv, args.min_support_per_class
+    )
     if not best:
         print("No grid results.")
         return
@@ -686,10 +694,16 @@ def main() -> None:
         print(f"  {k}: {v}")
 
     plot_path: str | None = None
+    threshold_marks_path: str | None = None
     if not args.no_plot:
         plot_path = args.plot_path or os.path.join(
             args.results_dir, "abstain_val_step_entropy.png"
         )
+        res_name = Path(args.results_dir).name
+        tm_dir = Path(args.abstaining_threshold_marks_dir) / res_name / METHOD_STEP_ENTROPY
+        tm_dir.mkdir(parents=True, exist_ok=True)
+        safe = sanitize_filename_component(res_name)
+        threshold_marks_path = str(tm_dir / f"{safe}_threshold_marks.png")
 
     print_test_report(
         val_data,
@@ -697,6 +711,8 @@ def main() -> None:
         best,
         plot_path=plot_path,
         model_name=None,
+        tau_records=tau_records,
+        threshold_marks_path=threshold_marks_path,
     )
 
 

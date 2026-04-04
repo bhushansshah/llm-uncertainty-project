@@ -81,19 +81,24 @@ Arguments are the same as `computing_baselines.py`, with one key default:
 
 Each baseline is saved as a separate CSV in `--results_dir` (e.g., `results/verbalized_baselines/avg_logprobs_baselines.csv`), with columns including `dataset`, `model`, `auroc`, and `accuracy` (and `num_selected_examples` for `answer_prob`).
 
-### Abstention experiments (step entropy, −log p, cumulative entropy)
+### Abstention experiments (step entropy, −log p, step KL, cumulative entropy)
 
 **Inputs:** JSON files named `result_<idx>.json` with `is_correct` and logprob fields as required by [`abstain_step_entropy.py`](abstain_step_entropy.py) (entropy methods need `response.logprobs` with `tokens` / `top_logprobs`; −log p needs `token_logprobs` or `logprobs`). Thinking-token boundaries follow the same rules as in that module.
 
-**Rows with missing/invalid logprob structure** (e.g. `tokens` is `null`) are **dropped before** the train/validation split. `--val_size` is then the validation set size on this **usable pool only**; the test set has `usable_total − val_size` examples. Grid search, τ, and active-step logic are unchanged; they apply only to examples that can be scored.
+**step_kl** ([`abstain_kl.py`](abstain_kl.py), [`scripts/abstain_step_kl_experiment.py`](scripts/abstain_step_kl_experiment.py)) uses the same `tokens` / `top_logprobs` structure as step entropy. It needs the **full vocabulary size V** per model: in batch mode pass `--vocab_map` JSON `{"<model_folder_name>": V, ...}` to the orchestrator or to the KL script; for a single `--results_dir`, pass `--vocab_size V`. Token-level **KL(U‖p)** is computed from the top‑k masses with the remainder spread **uniformly** over the other `V−k` types (documented in `abstain_kl.py`); it is exact KL for that completed distribution, not necessarily the true model KL if the tail differs.
+
+**Rows with missing/invalid logprob structure** (e.g. `tokens` is `null`) are **dropped before** the train/validation split. For **step entropy**, **neg_logprob**, and **step_kl**, `--val_fraction` (e.g. `0.3` → 30% of the usable pool) sets the validation size; for **agg_entropy**, `--val_size` is still a fixed count on the usable pool. Grid search, τ, and active-step logic are unchanged; they apply only to examples that can be scored.
 
 **Output layout** (batch mode — recommended):
 
-- `abstaining_results/<dataset>/<method>/avg_entropy.csv` — one row per model (all three methods)  
-- `abstaining_results/<dataset>/step_entropy/grid.csv` — combined validation grid with a `model_name` column (**step-entropy batch only**, unchanged from before; neg_logprob and agg_entropy batch runs never wrote this file)  
-- `abstaining_plots/<dataset>/<method>/<ModelSafeName>_val_step_<kind>.png`
+- `abstaining_results/<dataset>/<method>/avg_entropy.csv` — one row per model  
+- `abstaining_results/<dataset>/step_entropy/grid.csv`, `.../neg_logprob/grid.csv`, and `.../step_kl/grid.csv` — combined validation grids with a `model_name` column (**step_entropy**, **neg_logprob**, **step_kl** batch; agg_entropy batch does not write this file)  
+- `abstaining_plots/<dataset>/<method>/<ModelSafeName>_val_step_<kind>.png`  
+- `abstaining_threshold_marks/<dataset>/<method>/<ModelSafeName>_threshold_marks.png` — step entropy, −log p, and step_kl batch (optional `--abstaining_threshold_marks_dir`)
 
-Where `<method>` is one of `step_entropy`, `neg_logprob`, `agg_entropy`.
+Where `<method>` is one of `step_entropy`, `neg_logprob`, `step_kl`, `agg_entropy`.
+
+**Code layout:** [`abstain_experiment_common.py`](abstain_experiment_common.py) centralizes loading `result_*.json` directories, stratified validation/test splits (by fraction or fixed count), filename sanitization, and the **shared data-driven grid** used by step entropy, −log p, and step KL. Core abstention math (chunking, τ, active steps, F1) remains in [`abstain_step_entropy.py`](abstain_step_entropy.py); KL-to-uniform helpers in [`abstain_kl.py`](abstain_kl.py). Scripts under `scripts/` mostly compose these modules (agg_entropy keeps its own wider grid).
 
 **Orchestrator** — runs every selected method for each dataset, optionally filtered to specific models:
 
@@ -105,10 +110,10 @@ python abstain_experiment.py \
   --methods step_entropy neg_logprob agg_entropy \
   --abstaining_results_dir abstaining_results \
   --abstaining_plots_dir abstaining_plots \
-  --val_size 60 --seed 42 --min_support_per_class 3
+  --val_fraction 0.3 --val_size 60 --seed 42 --min_support_per_class 3
 ```
 
-Omit `--models` to include every model folder under each dataset that contains `result_*.json`. You need **more than `--val_size`** examples per model (e.g. 61+ files for `--val_size 60`).
+`--val_fraction` applies to `step_entropy`, `neg_logprob`, and `step_kl`; `--val_size` applies to `agg_entropy` only. Include **`--vocab_map vocab.json`** when `--methods` includes `step_kl` (JSON maps each model folder name to integer `V`). Omit `--models` to include every model folder under each dataset that contains `result_*.json`. You need **at least 2** usable examples per model for step entropy, neg_logprob, and step_kl, and **more than `--val_size`** for agg_entropy when using a fixed count.
 
 **Single dataset + method** (same layout as the orchestrator):
 
@@ -116,17 +121,17 @@ Omit `--models` to include every model folder under each dataset that contains `
 python scripts/abstain_step_entropy_experiment.py \
   --outputs_dir outputs --dataset gpqa \
   --abstaining_results_dir abstaining_results --abstaining_plots_dir abstaining_plots \
-  --val_size 60 --seed 42 --min_support_per_class 3
+  --val_fraction 0.3 --seed 42 --min_support_per_class 3
 ```
 
-Swap the script for [`scripts/abstain_step_neg_logprob_experiment.py`](scripts/abstain_step_neg_logprob_experiment.py) or [`scripts/abstain_step_agg_entropy_experiment.py`](scripts/abstain_step_agg_entropy_experiment.py). The cumulative-entropy script uses a larger validation grid (chunk 50–700, wider δ/noise ranges); it can be slow.
+Swap the script for [`scripts/abstain_step_neg_logprob_experiment.py`](scripts/abstain_step_neg_logprob_experiment.py), [`scripts/abstain_step_kl_experiment.py`](scripts/abstain_step_kl_experiment.py) (requires `--vocab_map` in batch or `--vocab_size` for a single `--results_dir`), or [`scripts/abstain_step_agg_entropy_experiment.py`](scripts/abstain_step_agg_entropy_experiment.py). The cumulative-entropy script uses a larger validation grid (chunk 50–700, wider δ/noise ranges); it can be slow.
 
 **Single model directory** (one flat folder of `result_*.json`):
 
 ```bash
 python scripts/abstain_step_entropy_experiment.py \
   --results_dir outputs/gpqa/MyModel \
-  --val_size 60 --seed 42 --min_support_per_class 3 \
+  --val_fraction 0.3 --seed 42 --min_support_per_class 3 \
   --output_csv grid_results.csv
 ```
 
@@ -165,6 +170,22 @@ python scripts/val_step_entropy_plot.py \
   --chunk_size 50 \
   --seed 42
 ```
+
+### Validation: per-chunk mean KL(U‖p) (step KL) vs step
+
+[`scripts/val_step_kl_plot.py`](scripts/val_step_kl_plot.py) matches the three-panel layout above: **mean chunk KL(U‖p)** (correct vs incorrect), variance of chunk means, and per-step counts on the validation split. Uses [`abstain_kl.py`](abstain_kl.py) (top‑k + uniform-tail completion) and the same thinking slice as step entropy. Requires **`--vocab_size`** (full vocabulary size `V`, same as [`scripts/abstain_step_kl_experiment.py`](scripts/abstain_step_kl_experiment.py)). Examples without aligned `tokens` / `top_logprobs` are dropped before the split.
+
+```bash
+python scripts/val_step_kl_plot.py \
+  --dataset gpqa \
+  --model Qwen_Qwen3-32B \
+  --vocab_size 151936 \
+  --val_size 60 \
+  --chunk_size 50 \
+  --seed 42
+```
+
+Output: `abstaining_validation_plot/<dataset>/<model>_val_step_kl.png`.
 
 ### Validation: cumulative (aggregated) entropy vs step
 

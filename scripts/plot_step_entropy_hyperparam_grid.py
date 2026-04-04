@@ -4,15 +4,15 @@ Visualize validation F1 over the step-entropy abstention grid from
 ``abstain_step_entropy_experiment.py --output_csv`` or a combined batch CSV such as
 ``abstaining_results/<dataset>/step_entropy/grid.csv``.
 
-The grid has four tunable hyperparameters (chunk_size, delta, noise, ground_threshold) plus
+The grid has four tunable hyperparameters (chunk_size, delta, offset or noise, ground_threshold) plus
 ``min_support_per_class`` (fixed for a given CSV run). This script produces **two** figures
 per run (or **per model** when the CSV has a ``model_name`` column):
 
 1. **Summary heatmap** — For each (chunk_size, delta), shows the **best F1** achievable over
-   all (noise, ground_threshold) in that slice.
+   all (offset/noise, ground_threshold) in that slice.
 
 2. **Faceted scatter** — One subplot per **delta**. Each point is **one full combination**;
-   **x** = chunk_size, **y** = validation F1, **color** = noise, **marker size** = ground_threshold.
+   **x** = chunk_size, **y** = validation F1, **color** = offset, **marker size** = ground_threshold.
 
 **Multi-model CSV** (multiple ``model_name`` values): writes
 ``<output_dir>/<SafeModelName>_summary.png`` and ``_detail.png`` for each model (e.g.
@@ -53,6 +53,8 @@ def _sanitize_filename_component(name: str) -> str:
 
 def load_grid_csv(path: str) -> pd.DataFrame:
     df = pd.read_csv(path)
+    if "offset" in df.columns and "noise" not in df.columns:
+        df = df.rename(columns={"offset": "noise"})
     missing = [c for c in REQUIRED_COLS if c not in df.columns]
     if missing:
         raise ValueError(f"CSV missing columns {missing}. Found: {list(df.columns)}")
@@ -70,7 +72,7 @@ def plot_summary_heatmap(
     out_path: str,
     title_suffix: str | None = None,
 ) -> None:
-    """Max F1 over (noise, ground_threshold) for each (chunk_size, delta)."""
+    """Max F1 over (offset, ground_threshold) for each (chunk_size, delta)."""
     agg = (
         df.groupby(["chunk_size", "delta"], as_index=False)["f1"]
         .max()
@@ -89,7 +91,7 @@ def plot_summary_heatmap(
         vmax=float(np.nanmax(data)),
     )
     cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-    cbar.set_label("Max validation F1 (over noise, ground_threshold)")
+    cbar.set_label("Max validation F1 (over offset, ground_threshold)")
 
     ax.set_xticks(np.arange(pivot.shape[1]))
     ax.set_xticklabels([str(int(c)) for c in pivot.columns], rotation=45, ha="right")
@@ -110,7 +112,7 @@ def plot_faceted_scatter(
     out_path: str,
     title_suffix: str | None = None,
 ) -> None:
-    """One row per delta; points = full combos; color=noise, size=ground_threshold."""
+    """One row per delta; points = full combos; color=offset, size=ground_threshold."""
     deltas = sorted(df["delta"].unique())
     n = len(deltas)
     fig, axes = plt.subplots(
@@ -162,7 +164,7 @@ def plot_faceted_scatter(
     sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array([])
     cbar = fig.colorbar(sm, ax=axes.ravel().tolist(), fraction=0.02, pad=0.02)
-    cbar.set_label("noise (added to τ)")
+    cbar.set_label("offset (added to τ)")
 
     uniq_g = sorted(df["ground_threshold"].unique())
     if len(uniq_g) <= 3:
@@ -191,8 +193,8 @@ def plot_faceted_scatter(
     )
 
     supt = (
-        "Every point = one (chunk_size, δ, noise, ground_threshold) combo. "
-        "Color = noise, size = ground_threshold."
+        "Every point = one (chunk_size, δ, offset, ground_threshold) combo. "
+        "Color = offset, size = ground_threshold."
     )
     if title_suffix:
         supt = f"{title_suffix}\n{supt}"
