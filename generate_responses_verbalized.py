@@ -99,6 +99,8 @@ def get_confidence_class(confidence_text):
 
 def is_correct_answer(answer, gold_option, gold_answer):
     """Check if extracted answer matches gold option or gold answer text. Matches process.py logic."""
+    if not answer or not str(answer).strip():
+        return False
     gd = gold_option.lower()
     ans = answer.lower().strip()[0]
     if ans == gd:

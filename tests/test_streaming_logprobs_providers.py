@@ -38,14 +38,16 @@ from openai import OpenAI
 load_dotenv(_REPO / ".env")
 
 PROMPT = "What is the capital of India? Answer in one sentence only."
-BASE_URL = os.environ.get("HF_ROUTER_BASE") or os.environ.get(
-    "TEST_HF_ROUTER_BASE", "https://router.huggingface.co/v1"
-)
-MODEL = os.environ.get("HF_ROUTER_MODEL") or os.environ.get(
-    "TEST_HF_ROUTER_MODEL", "Qwen/Qwen3-32B:groq"
-)
+# BASE_URL = os.environ.get("HF_ROUTER_BASE") or os.environ.get(
+#     "TEST_HF_ROUTER_BASE", "https://router.huggingface.co/v1"
+# )
+BASE_URL = "http://localhost:8000/v1"
+# MODEL = os.environ.get("HF_ROUTER_MODEL") or os.environ.get(
+#     "TEST_HF_ROUTER_MODEL", "Qwen/Qwen3-32B:groq"
+# )
+MODEL = "Qwen/Qwen3-32B"
 TOP_LOGPROBS = min(
-    int(os.environ.get("TOP_LOGPROBS") or os.environ.get("TEST_TOP_LOGPROBS", "5")), 5
+    int(os.environ.get("TOP_LOGPROBS") or os.environ.get("TEST_TOP_LOGPROBS", "10")), 10
 )
 
 
@@ -103,14 +105,15 @@ def main() -> None:
     key = os.environ.get("HF_TOKEN", "").strip()
     if not key:
         print("Set HF_TOKEN in .env", file=sys.stderr)
-        sys.exit(1)
 
     client = OpenAI(api_key=key, base_url=BASE_URL)
     stream = client.chat.completions.create(
         model=MODEL,
         messages=[{"role": "user", "content": PROMPT}],
         max_tokens=512,
-        temperature=0,
+        temperature=0.6,
+        top_p=0.95,
+        n=1,
         stream=True,
         logprobs=True,
         top_logprobs=TOP_LOGPROBS,
