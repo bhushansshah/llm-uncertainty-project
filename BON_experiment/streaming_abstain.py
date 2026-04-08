@@ -92,6 +92,56 @@ def mean_thinking_entropy(tokens: list[str], top_logprobs: list[dict[str, float]
     return float(np.mean(ent))
 
 
+def stream_chat_collect_only(stream) -> dict[str, Any]:
+    """
+    Consume the full streaming iterator: collect all tokens with logprobs until the stream ends.
+    No early abstention. ``uncertainty`` is mean token entropy over the thinking region (same as
+    ``stream_chat_with_optional_abstention`` when it does not abstain).
+    """
+    t0 = time.perf_counter()
+    tokens: list[str] = []
+    log_probs: list[float] = []
+    top_logprobs: list[dict[str, float]] = []
+    try:
+        for chunk in stream:
+            if not chunk.choices:
+                continue
+            ch = chunk.choices[0]
+            lp = ch.logprobs
+            if lp is None or lp.content is None:
+                continue
+            for item in lp.content:
+                chosen = getattr(item, "logprob", None)
+                if chosen is None:
+                    continue
+                tokens.append(item.token)
+                log_probs.append(float(chosen))
+                top_logprobs.append(_top_alternatives_to_dict(item.top_logprobs))
+    finally:
+        close_fn = getattr(stream, "close", None)
+        if callable(close_fn):
+            try:
+                close_fn()
+            except Exception:
+                pass
+
+    elapsed = time.perf_counter() - t0
+    reasoning, content = split_reasoning_and_content(tokens)
+    unc = mean_thinking_entropy(tokens, top_logprobs)
+
+    return {
+        "tokens": tokens,
+        "log_probs": log_probs,
+        "top_logprobs": top_logprobs,
+        "is_abstained": False,
+        "reasoning": reasoning,
+        "content": content,
+        "uncertainty": unc,
+        "total_token_count": len(tokens),
+        "time_taken": elapsed,
+    }
+
+
 def stream_chat_with_optional_abstention(
     stream,
     *,
